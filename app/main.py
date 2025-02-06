@@ -10,21 +10,23 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configure CORS
-origins = [
-    "http://localhost:5173",  # Local development
-    "http://localhost:3000",  # Local production build
-    "https://aptos-dev-intensified.vercel.app",  # Production frontend
-    "https://aptos-dev-assistant-sdlgryoz4q-uc.a.run.app",  # Production backend
-]
-
+# Configure CORS to allow all origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=False,  # Must be False for wildcard origin
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "service": "Aptos Dev Assistant API",
+        "version": "1.0.0"
+    }
 
 # Include routers
 app.include_router(chat.router, prefix="/api")

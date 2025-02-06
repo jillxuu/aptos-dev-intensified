@@ -8,6 +8,7 @@ import { Toaster, toast } from 'react-hot-toast'
 import { FiSend, FiCpu, FiThumbsUp, FiThumbsDown, FiCopy, FiCheck } from 'react-icons/fi'
 import rainbowPet from '../assets/rainbow-pet-small.png'
 import robotIcon from '../assets/robot-small.png'
+import { config } from '../config'
 
 interface Message {
   id?: string
@@ -90,7 +91,7 @@ const Chat = () => {
       ))
 
       // Send feedback to backend
-      await axios.post('http://localhost:8000/api/feedback', {
+      await axios.post(`${config.apiBaseUrl}/feedback`, {
         message_id: messageId,
         query: userMessage.content,
         response: message.content,
@@ -139,7 +140,7 @@ const Chat = () => {
     setIsLoading(true)
 
     try {
-      const response = await axios.post('http://localhost:8000/api/chat', {
+      const response = await axios.post(`${config.apiBaseUrl}/chat`, {
         messages: newMessages,
         temperature: 0.7
       })
