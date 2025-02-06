@@ -15,6 +15,7 @@ origins = [
     "http://localhost:5173",  # Local development
     "http://localhost:3000",  # Local production build
     "https://aptos-dev-intensified.vercel.app",  # Production frontend
+    "https://aptos-dev-assistant-sdlgryoz4q-uc.a.run.app",  # Production backend
 ]
 
 app.add_middleware(
