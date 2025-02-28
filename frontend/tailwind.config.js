@@ -1,25 +1,15 @@
 /** @type {import('tailwindcss').Config} */
-import typography from '@tailwindcss/typography'
-import daisyui from 'daisyui'
+import typography from "@tailwindcss/typography";
+import daisyui from "daisyui";
 
 export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {},
   },
-  plugins: [
-    typography,
-    daisyui
-  ],
+  plugins: [typography, daisyui],
   daisyui: {
-    themes: [
-      "lofi", 
-      "cyberpunk",
-      "synthwave",
-    ],
+    themes: ["lofi", "cyberpunk", "synthwave"],
     base: true,
     styled: true,
     utils: true,
@@ -27,4 +17,4 @@ export default {
     logs: true,
     themeRoot: ":root",
   },
-} 
+};

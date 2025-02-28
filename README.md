@@ -38,12 +38,12 @@ cd frontend
 
 2. Install dependencies:
 ```bash
-npm install
+pnpm install
 ```
 
 3. Start the development server:
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 ## Usage
@@ -56,7 +56,7 @@ uvicorn app.main:app --reload
 2. Start the frontend development server:
 ```bash
 cd frontend
-npm run dev
+pnpm run dev
 ```
 
 3. Access the application at `http://localhost:5173`
