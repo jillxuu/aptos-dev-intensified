@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from app.models import (
-    ChatRequest, ChatResponse, Feedback, ChatHistory, 
+    ChatRequest, ChatResponse, Feedback, ChatHistory, ChatMessage,
     ChatMessageRequest, ChatMessageResponse, ChatHistoryResponse,
     ChatHistoriesResponse, StatusResponse, get_relevant_context
 )
@@ -15,6 +15,7 @@ from datetime import datetime
 import uuid
 from app.db_models import firestore_chat
 import asyncio
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -53,6 +54,12 @@ When answering:
 1. Be concise and to the point
 2. Use exact technical terminology from the documentation
 3. Include specific examples when relevant
+4. Format your responses using proper markdown:
+   - Use proper line breaks between paragraphs (double newline)
+   - For numbered lists, ensure each item is on a new line with a blank line before the list starts
+   - For code blocks, ALWAYS use triple backticks with language specification (e.g. ```typescript, ```python, ```move, ```json)
+   - Ensure code blocks have proper indentation and formatting
+   - For inline code, use single backticks
 
 User's question: {question}"""
 
@@ -98,14 +105,27 @@ async def stream_response(response_text: str):
 async def generate_ai_response(message: str, chat_id: str = None) -> AsyncGenerator[str, None]:
     """Generate AI response using RAG."""
     try:
+        logger.info(f"[RAG] Starting response generation for message: {message[:100]}... in chat {chat_id}")
+        
         # Get relevant context from documentation
+        logger.info("[RAG] Retrieving relevant context...")
         context_chunks = get_relevant_context(message, k=3)
+        
+        if not context_chunks:
+            logger.warning("[RAG] No context chunks retrieved - RAG may not be properly initialized")
+            yield "I apologize, but I'm currently operating without access to the documentation. My responses may be limited."
+            return
+            
+        logger.info(f"[RAG] Retrieved {len(context_chunks)} context chunks")
+        for i, chunk in enumerate(context_chunks):
+            logger.info(f"[RAG] Context chunk {i+1}: Section={chunk['section']}, Score={chunk.get('score', 'N/A')}")
         
         # Format context for the prompt
         formatted_context = "\n\n".join([
             f"Section: {chunk['section']}\nContent: {chunk['content']}"
             for chunk in context_chunks
         ])
+        logger.info(f"[RAG] Total formatted context length: {len(formatted_context)} characters")
         
         # Create messages for the chat
         messages = [
@@ -122,13 +142,42 @@ async def generate_ai_response(message: str, chat_id: str = None) -> AsyncGenera
             }
         ]
         
+        logger.info("[RAG] Starting streaming response generation...")
+        full_response = ""
+        
         # Use astream instead of invoke for streaming
         async for chunk in chat_model.astream(messages):
             if chunk.content:
+                full_response += chunk.content
                 yield chunk.content
+        
+        logger.info(f"[RAG] Completed response generation. Total response length: {len(full_response)} characters")
+        
+        # Update the assistant message in the chat history with the full response
+        if chat_id:
+            try:
+                # Get the chat history
+                history = await firestore_chat.get_chat_history(chat_id)
+                if history:
+                    # Find the last assistant message (which should be empty)
+                    assistant_message_found = False
+                    for i in range(len(history.messages) - 1, -1, -1):
+                        if history.messages[i].role == "assistant" and not history.messages[i].content:
+                            # Update the content
+                            history.messages[i].content = full_response
+                            # Update the chat history
+                            await firestore_chat.update_chat_history(history)
+                            assistant_message_found = True
+                            logger.info(f"[RAG] Updated assistant message in chat {chat_id}")
+                            break
+                    
+                    if not assistant_message_found:
+                        logger.warning(f"[RAG] No empty assistant message found in chat {chat_id}")
+            except Exception as e:
+                logger.error(f"[RAG] Error updating assistant message: {str(e)}", exc_info=True)
 
     except Exception as e:
-        logger.error(f"Error generating AI response: {str(e)}", exc_info=True)
+        logger.error(f"[RAG] Error generating AI response: {str(e)}", exc_info=True)
         yield "I apologize, but I encountered an error while processing your request. Please try again."
 
 @router.post("/chat/new/stream")
@@ -141,8 +190,61 @@ async def new_chat_stream(request: ChatRequest):
         if user_message.role != "user":
             raise HTTPException(status_code=400, detail="First message must be from user")
 
-        # Create new chat with UUID
+        # Validate client_id
+        if not request.client_id or request.client_id == "undefined" or request.client_id == "null":
+            raise HTTPException(status_code=400, detail="Invalid client ID")
+
+        # Create new chat with UUID and initialize with both messages
         chat_id = str(uuid.uuid4())
+        assistant_message_id = str(uuid.uuid4())
+        
+        logger.info(f"Creating new chat {chat_id} for client {request.client_id}")
+        
+        # Get context and prepare metadata before streaming
+        context_chunks = get_relevant_context(user_message.content, k=3)
+        if not context_chunks:
+            logger.warning("[RAG] No context chunks retrieved for new chat")
+            metadata = {
+                "sources": [],
+                "used_chunks": []
+            }
+        else:
+            metadata = {
+                "sources": [chunk["source"] for chunk in context_chunks if "source" in chunk],
+                "used_chunks": [{
+                    "content": chunk["content"],
+                    "section": chunk["section"],
+                    "source": chunk.get("source", "")
+                } for chunk in context_chunks]
+            }
+        
+        # Create initial chat history with both messages
+        new_chat = ChatHistory(
+            id=chat_id,
+            title=user_message.content[:50] + "...",
+            timestamp=datetime.now().isoformat(),
+            client_id=request.client_id,
+            messages=[
+                ChatMessage(
+                    id=str(uuid.uuid4()),
+                    role="user",
+                    content=user_message.content,
+                    timestamp=datetime.now().isoformat()
+                ),
+                ChatMessage(
+                    id=assistant_message_id,
+                    role="assistant",
+                    content="",  # Will be filled during streaming
+                    timestamp=datetime.now().isoformat(),
+                    sources=metadata["sources"],
+                    used_chunks=metadata["used_chunks"]
+                )
+            ]
+        )
+        
+        # Save initial chat history with metadata
+        await firestore_chat.create_chat_history(new_chat)
+        logger.info(f"Created new chat history {chat_id}")
         
         return StreamingResponse(
             generate_ai_response(user_message.content, chat_id),
@@ -169,16 +271,101 @@ async def get_chat_messages(chat_id: str):
         logger.error(f"Error getting chat messages: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/chat/latest", response_model=ChatHistory)
+async def get_latest_chat_history(client_id: str):
+    """Get the latest chat history for a client."""
+    try:
+        # Validate client_id
+        if not client_id or client_id == "undefined" or client_id == "null":
+            raise HTTPException(status_code=400, detail="Invalid client ID")
+            
+        logger.info(f"Getting latest chat history for client {client_id}")
+        
+        # Get all chat histories for the client
+        histories = await firestore_chat.get_client_chat_histories(client_id)
+        
+        if not histories:
+            logger.warning(f"No chat histories found for client {client_id}")
+            raise HTTPException(status_code=404, detail="No chat histories found for this client")
+        
+        # Sort by timestamp (newest first) and return the first one
+        histories.sort(key=lambda x: x.timestamp, reverse=True)
+        latest_history = histories[0]
+        
+        logger.info(f"Found latest chat history {latest_history.id} for client {client_id}")
+        return latest_history
+    except Exception as e:
+        logger.error(f"Error getting latest chat history: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/chat/{chat_id}/message/stream")
 async def add_chat_message_stream(chat_id: str, message: ChatMessageRequest):
     try:
         if message.role != "user":
             raise HTTPException(status_code=400, detail="Only user messages can be added directly")
         
+        # Ensure we're using the path parameter chat_id, not any chat_id in the message body
+        # This ensures we're updating the correct chat
+        logger.info(f"Adding message to existing chat: {chat_id}")
+        
+        # Validate chat_id
+        if not chat_id or chat_id == "undefined" or chat_id == "null":
+            raise HTTPException(status_code=400, detail="Invalid chat ID")
+        
         # Get existing chat history
         history = await firestore_chat.get_chat_history(chat_id)
         if not history:
+            logger.error(f"Chat history not found: {chat_id}")
             raise HTTPException(status_code=404, detail="Chat history not found")
+        
+        # Create assistant message with metadata before streaming
+        context_chunks = get_relevant_context(message.content, k=3)
+        if not context_chunks:
+            logger.warning("[RAG] No context chunks retrieved for message")
+            metadata = {
+                "sources": [],
+                "used_chunks": []
+            }
+        else:
+            metadata = {
+                "sources": [chunk["source"] for chunk in context_chunks if "source" in chunk],
+                "used_chunks": [{
+                    "content": chunk["content"],
+                    "section": chunk["section"],
+                    "source": chunk.get("source", "")
+                } for chunk in context_chunks]
+            }
+        
+        # Add both user and assistant messages to history
+        user_message_id = str(uuid.uuid4())
+        assistant_message_id = str(uuid.uuid4())
+        
+        # Add user message
+        history.messages.append(ChatMessage(
+            id=user_message_id,
+            role="user",
+            content=message.content,
+            timestamp=datetime.now().isoformat()
+        ))
+        
+        # Add empty assistant message (will be filled during streaming)
+        assistant_message = ChatMessage(
+            id=assistant_message_id,
+            role="assistant",
+            content="",  # Will be filled during streaming
+            timestamp=datetime.now().isoformat(),
+            sources=metadata["sources"],
+            used_chunks=metadata["used_chunks"]
+        )
+        history.messages.append(assistant_message)
+        
+        # Update timestamp to ensure it's the most recent
+        history.timestamp = datetime.now().isoformat()
+        
+        # Update history with new messages including metadata
+        await firestore_chat.update_chat_history(history)
+        
+        logger.info(f"Updated chat history {chat_id} with new messages")
         
         return StreamingResponse(
             generate_ai_response(message.content, chat_id),
@@ -201,8 +388,8 @@ async def submit_feedback(feedback: Feedback):
 @router.delete("/chat/history/{chat_id}")
 async def delete_chat_history(chat_id: str):
     try:
-        global chat_histories
-        chat_histories = [h for h in chat_histories if h.id != chat_id]
+        # Delete from Firestore
+        await firestore_chat.delete_chat_history(chat_id)
         return {"status": "success", "message": "Chat history deleted"}
     except Exception as e:
         logger.error(f"Error deleting chat history: {str(e)}", exc_info=True)

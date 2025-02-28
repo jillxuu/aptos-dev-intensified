@@ -29,6 +29,13 @@ class FirestoreChat:
     async def create_chat_history(self, history: ChatHistory) -> str:
         """Create a new chat history."""
         try:
+            # Check if a chat with this ID already exists
+            existing_chat = await self.get_chat_history(history.id)
+            if existing_chat:
+                logger.warning(f"Chat history with ID {history.id} already exists, updating instead")
+                await self.update_chat_history(history)
+                return history.id
+                
             # Convert to dict and handle timestamps
             history_dict = self._convert_to_dict(history)
             history_dict = self._handle_timestamp(history_dict)
@@ -70,11 +77,21 @@ class FirestoreChat:
     async def update_chat_history(self, history: ChatHistory):
         """Update an existing chat history."""
         try:
+            logger.info(f"Updating chat history {history.id} with {len(history.messages)} messages")
             history_dict = self._convert_to_dict(history)
             history_dict = self._handle_timestamp(history_dict)
+            
+            # Validate that all messages have content
+            for i, message in enumerate(history_dict.get('messages', [])):
+                if 'content' not in message or message['content'] is None:
+                    logger.warning(f"Message {i} in chat {history.id} has no content, setting to empty string")
+                    message['content'] = ""
+            
+            # Update the document
             self.chats_ref.document(history.id).set(history_dict, merge=True)
+            logger.info(f"Successfully updated chat history {history.id}")
         except Exception as e:
-            logger.error(f"Error updating chat history: {str(e)}")
+            logger.error(f"Error updating chat history {history.id}: {str(e)}")
             raise
 
     async def delete_chat_history(self, chat_id: str):
