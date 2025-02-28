@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes import chat
-from app.models import initialize_models, load_aptos_docs, load_documents
+from app.models import initialize_models, load_aptos_docs
 import os
 
 app = FastAPI(
@@ -14,7 +14,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allow all origins
-    allow_credentials=False,  # Must be False for wildcard origin
+    allow_credentials=True,  # Must be True for wildcard origin
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -36,7 +36,6 @@ async def startup_event():
     # Initialize models and load documents
     initialize_models()
     load_aptos_docs()
-    load_documents()
 
 if __name__ == "__main__":
     import uvicorn

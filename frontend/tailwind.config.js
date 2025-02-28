@@ -16,14 +16,9 @@ export default {
   ],
   daisyui: {
     themes: [
-      "light",
+      "lofi", 
       "cyberpunk",
       "synthwave",
-      "retro",
-      "valentine",
-      "aqua",
-      "night",
-      "winter"
     ],
     base: true,
     styled: true,

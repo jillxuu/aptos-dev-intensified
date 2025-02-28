@@ -37,6 +37,7 @@ yarn-error.log*
 
 # Chroma
 data/chroma/
+data/developer-docs
 
 # IDE
 .idea/

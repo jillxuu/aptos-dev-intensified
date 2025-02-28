@@ -1,6 +1,6 @@
-# Aptos RAG Assistant
+# Aptos devdoc chatbot
 
-A fine-tuned AI assistant powered by RAG (Retrieval-Augmented Generation) on Aptos data. This project combines modern LLMs (Claude/ChatGPT) with Aptos-specific knowledge to provide accurate and contextual responses.
+A fine-tuned AI assistant powered by RAG (Retrieval-Augmented Generation) on Aptos data. This project combines modern LLMs (ChatGPT) with Aptos-specific knowledge to provide accurate and contextual responses.
 
 ## Features
 
@@ -27,7 +27,6 @@ pip install -r requirements.txt
 
 3. Create a `.env` file with your API keys:
 ```
-ANTHROPIC_API_KEY=your_claude_api_key
 OPENAI_API_KEY=your_openai_api_key
 ```
 

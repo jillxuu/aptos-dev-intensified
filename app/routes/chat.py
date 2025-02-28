@@ -1,22 +1,41 @@
-from fastapi import APIRouter, HTTPException
-from app.models import ChatRequest, ChatResponse, Feedback, ChatHistory, get_relevant_context
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from app.models import (
+    ChatRequest, ChatResponse, Feedback, ChatHistory, 
+    ChatMessageRequest, ChatMessageResponse, ChatHistoryResponse,
+    ChatHistoriesResponse, StatusResponse, get_relevant_context
+)
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.prompts import ChatPromptTemplate
 import os
 import logging
 import numpy as np
-from typing import List
+from typing import List, AsyncGenerator
 from datetime import datetime
 import uuid
+from app.db_models import firestore_chat
+import asyncio
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+# Test mode configuration
+TEST_MODE = os.getenv('CHAT_TEST_MODE', 'false').lower() == 'true'
+logger.info(f"Chat test mode: {'enabled' if TEST_MODE else 'disabled'}")
 
 # Initialize embeddings model
 embeddings_model = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"))
+
+# Initialize chat model
+chat_model = ChatOpenAI(
+    model_name="gpt-3.5-turbo-16k",
+    temperature=0.7,
+    openai_api_key=os.getenv("OPENAI_API_KEY"),
+    streaming=True
+)
+
+router = APIRouter()
 
 # In-memory storage for chat histories (replace with database in production)
 chat_histories = []
@@ -24,52 +43,6 @@ chat_histories = []
 def cosine_similarity(a: List[float], b: List[float]) -> float:
     """Calculate cosine similarity between two vectors."""
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
-
-def is_technical_question(message: str, threshold: float = 0.75) -> bool:
-    """
-    Check if a message is related to Aptos/blockchain technology using semantic similarity.
-    
-    Args:
-        message: The user's message
-        threshold: Similarity threshold (0-1) for technical question detection
-        
-    Returns:
-        bool: True if the message is semantically similar to technical/Aptos-related topics
-    """
-    # Representative technical topics and concepts from Aptos
-    technical_topics = [
-        "How does the Move programming language work?",
-        "What is blockchain consensus?",
-        "How do I deploy a smart contract?",
-        "What are transactions in Aptos?",
-        "How does Aptos handle account management?",
-        "What is the token standard in Aptos?",
-        "How do I create an NFT on Aptos?",
-        "What are modules in Move?",
-        "How does Aptos achieve scalability?",
-        "What is the Aptos framework?"
-    ]
-    
-    try:
-        # Get embeddings for the message and technical topics
-        message_embedding = embeddings_model.embed_query(message.lower())
-        topic_embeddings = [embeddings_model.embed_query(topic) for topic in technical_topics]
-        
-        # Calculate maximum similarity with any technical topic
-        max_similarity = max(
-            cosine_similarity(message_embedding, topic_emb)
-            for topic_emb in topic_embeddings
-        )
-        
-        logger.debug(f"Technical topic similarity score: {max_similarity}")
-        return max_similarity > threshold
-        
-    except Exception as e:
-        logger.error(f"Error in technical question detection: {e}")
-        # Fall back to keyword-based heuristic if embedding fails
-        keywords = {'aptos', 'blockchain', 'move', 'smart contract', 'token', 'nft', 
-                   'transaction', 'wallet', 'crypto', 'module', 'consensus', 'node'}
-        return any(keyword in message.lower() for keyword in keywords)
 
 SYSTEM_TEMPLATE = """You are an AI assistant specialized in Aptos blockchain technology. You have access to the official Aptos documentation from aptos.dev. Your task is to provide accurate, technical explanations based on the following documentation context:
 
@@ -80,159 +53,147 @@ When answering:
 1. Be concise and to the point
 2. Use exact technical terminology from the documentation
 3. Include specific examples when relevant
-4. If you're not completely certain or documentation is incomplete, refer users to:
-   - aptos.dev
-   - learn.aptoslabs.com
-   - developers.aptoslabs.com/docs/introduction
-5. ALWAYS reference documentation pages using the format: aptos.dev/en/[path]
 
 User's question: {question}"""
 
-@router.get("/chat/histories")
-async def get_chat_histories():
-    return chat_histories
+@router.get("/chat/histories", response_model=ChatHistoriesResponse)
+async def get_chat_histories(client_id: str):
+    """Get all chat histories for a specific client."""
+    try:
+        histories = await firestore_chat.get_client_chat_histories(client_id)
+        return {
+            "histories": histories,
+            "total_count": len(histories)
+        }
+    except Exception as e:
+        logger.error(f"Error getting chat histories: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/chat/history/{chat_id}")
+@router.get("/chat/history/{chat_id}", response_model=ChatHistory)
 async def get_chat_history(chat_id: str):
-    history = next((h for h in chat_histories if h.id == chat_id), None)
+    history = await firestore_chat.get_chat_history(chat_id)
     if not history:
         raise HTTPException(status_code=404, detail="Chat history not found")
     return history
 
-@router.post("/chat/history")
+@router.post("/chat/history", response_model=StatusResponse)
 async def create_chat_history(history: ChatHistory):
-    chat_histories.append(history)
+    await firestore_chat.create_chat_history(history)
     return {"status": "success", "message": "Chat history created"}
 
-@router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+@router.put("/chat/history/{chat_id}", response_model=StatusResponse)
+async def update_chat_history(chat_id: str, history: ChatHistory):
+    if chat_id != history.id:
+        raise HTTPException(status_code=400, detail="Chat ID mismatch")
+    await firestore_chat.update_chat_history(history)
+    return {"status": "success", "message": "Chat history updated"}
+
+async def stream_response(response_text: str):
+    """Stream the response text word by word."""
+    words = response_text.split()
+    for word in words:
+        yield f"{word} "
+        await asyncio.sleep(0.05)  # Add a small delay between words
+
+async def generate_ai_response(message: str, chat_id: str = None) -> AsyncGenerator[str, None]:
+    """Generate AI response using RAG."""
     try:
-        logger.debug("Received chat request")
-        # Get the last user message
-        last_message = next((msg for msg in reversed(request.messages) if msg.role == "user"), None)
-        if not last_message:
-            raise HTTPException(status_code=400, detail="No user message found")
+        # Get relevant context from documentation
+        context_chunks = get_relevant_context(message, k=3)
         
-        logger.debug(f"Processing user message: {last_message.content}")
+        # Format context for the prompt
+        formatted_context = "\n\n".join([
+            f"Section: {chunk['section']}\nContent: {chunk['content']}"
+            for chunk in context_chunks
+        ])
         
-        # Check if the message is technical/Aptos-related
-        is_technical = is_technical_question(last_message.content)
-        
-        context_docs = []
-        if is_technical:
-            # For technical questions, get more context
-            logger.debug("Getting relevant context for technical question")
-            # Get more documents for technical questions
-            context_docs = get_relevant_context(last_message.content, k=8)
-            logger.debug(f"Found {len(context_docs) if context_docs else 0} relevant documents")
-            
-            # If the question contains specific technical terms, try to get additional context
-            technical_terms = ['keyless', 'authentication', 'account', 'transaction', 'smart contract']
-            if any(term in last_message.content.lower() for term in technical_terms):
-                logger.debug("Getting additional context for specific technical terms")
-                # Get additional context specifically about these terms
-                additional_docs = get_relevant_context(
-                    f"technical details and implementation of {' '.join(term for term in technical_terms if term in last_message.content.lower())}", 
-                    k=3
+        # Create messages for the chat
+        messages = [
+            {
+                "role": "system",
+                "content": SYSTEM_TEMPLATE.format(
+                    context=formatted_context,
+                    question=message
                 )
-                # Add new docs that aren't duplicates
-                existing_sources = {doc['source'] for doc in context_docs}
-                for doc in additional_docs:
-                    if doc['source'] not in existing_sources:
-                        context_docs.append(doc)
-                        existing_sources.add(doc['source'])
+            },
+            {
+                "role": "user",
+                "content": message
+            }
+        ]
         
-        # Format context with clear section markers and source references
-        context_text = "\n\n".join([
-            f"[Section: {doc['section']}]\n{doc['content']}\nSource: aptos.dev/en/{doc['source'].replace('data/developer-docs/apps/nextra/pages/en/', '').replace('.mdx', '').replace('.md', '')}"
-            for doc in context_docs
-        ]) if context_docs else "No specific context available."
-        
-        logger.debug("Creating prompt")
-        # Create prompt
-        prompt = ChatPromptTemplate.from_template(SYSTEM_TEMPLATE)
-        formatted_prompt = prompt.format(
-            context=context_text,
-            question=last_message.content
-        )
-        
-        logger.debug("Initializing GPT-4 model")
-        # Initialize GPT-4 model
-        model = ChatOpenAI(
-            model="gpt-4-turbo-preview",
-            temperature=request.temperature,
-            openai_api_key=os.getenv("OPENAI_API_KEY")
-        )
-        
-        logger.debug("Generating response")
-        # Generate response
-        response = model.invoke(formatted_prompt)
-        logger.debug("Response generated successfully")
-
-        # Format sources
-        sources = []
-        if context_docs:
-            seen_sources = set()
-            for doc in context_docs:
-                source = f"aptos.dev/en/{doc['source'].replace('data/developer-docs/apps/nextra/pages/en/', '').replace('.mdx', '').replace('.md', '')}"
-                if source not in seen_sources:
-                    sources.append(source)
-                    seen_sources.add(source)
-
-        # Handle chat history
-        chat_id = request.messages[0].id if hasattr(request.messages[0], 'id') else None
-        existing_history = next((h for h in chat_histories if h.id == chat_id), None) if chat_id else None
-
-        if existing_history:
-            # Update existing history
-            existing_history.messages = request.messages
-        else:
-            # Create new history
-            history = ChatHistory(
-                id=str(uuid.uuid4()),
-                title=request.messages[0].content[:50] + "...",
-                timestamp=datetime.now().isoformat(),
-                messages=request.messages
-            )
-            chat_histories.append(history)
-            chat_id = history.id
-
-        logger.debug("Returning response")
-        return {
-            "response": response.content,
-            "sources": sources if sources else None,
-            "used_chunks": context_docs if context_docs else None,
-            "chat_id": chat_id
-        }
+        # Use astream instead of invoke for streaming
+        async for chunk in chat_model.astream(messages):
+            if chunk.content:
+                yield chunk.content
 
     except Exception as e:
-        logger.error(f"Error in chat endpoint: {str(e)}", exc_info=True)
+        logger.error(f"Error generating AI response: {str(e)}", exc_info=True)
+        yield "I apologize, but I encountered an error while processing your request. Please try again."
+
+@router.post("/chat/new/stream")
+async def new_chat_stream(request: ChatRequest):
+    try:
+        if not request.messages or len(request.messages) != 1:
+            raise HTTPException(status_code=400, detail="New chat must start with exactly one message")
+        
+        user_message = request.messages[0]
+        if user_message.role != "user":
+            raise HTTPException(status_code=400, detail="First message must be from user")
+
+        # Create new chat with UUID
+        chat_id = str(uuid.uuid4())
+        
+        return StreamingResponse(
+            generate_ai_response(user_message.content, chat_id),
+            media_type='text/event-stream'
+        )
+
+    except Exception as e:
+        logger.error(f"Error creating new chat stream: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/feedback")
+@router.get("/chat/{chat_id}/messages", response_model=ChatHistoryResponse)
+async def get_chat_messages(chat_id: str):
+    try:
+        history = await firestore_chat.get_chat_history(chat_id)
+        if not history:
+            raise HTTPException(status_code=404, detail="Chat history not found")
+        
+        return {
+            "chat_id": chat_id,
+            "title": history.title,
+            "messages": history.messages
+        }
+    except Exception as e:
+        logger.error(f"Error getting chat messages: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/chat/{chat_id}/message/stream")
+async def add_chat_message_stream(chat_id: str, message: ChatMessageRequest):
+    try:
+        if message.role != "user":
+            raise HTTPException(status_code=400, detail="Only user messages can be added directly")
+        
+        # Get existing chat history
+        history = await firestore_chat.get_chat_history(chat_id)
+        if not history:
+            raise HTTPException(status_code=404, detail="Chat history not found")
+        
+        return StreamingResponse(
+            generate_ai_response(message.content, chat_id),
+            media_type='text/event-stream'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error adding chat message stream: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/feedback", response_model=StatusResponse)
 async def submit_feedback(feedback: Feedback):
     try:
-        logger.debug(f"Received feedback for message {feedback.message_id}")
-        
-        # Here we'll store the feedback - for now we'll just log it
-        # In a production system, this would be stored in a database
-        logger.info(f"""
-        Feedback received:
-        Message ID: {feedback.message_id}
-        Rating: {"👍" if feedback.rating else "👎"}
-        Query: {feedback.query}
-        Feedback text: {feedback.feedback_text if feedback.feedback_text else "None"}
-        Number of chunks used: {len(feedback.used_chunks) if feedback.used_chunks else 0}
-        """)
-        
-        # TODO(jill): Implement feedback processing logic:
-        # 1. Store feedback in database
-        # 2. Update chunk relevance scores
-        # 3. Flag responses for review if needed
-        # 4. Collect training data for fine-tuning
-        
+        await firestore_chat.save_feedback(feedback)
         return {"status": "success", "message": "Feedback received"}
-        
     except Exception as e:
         logger.error(f"Error processing feedback: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

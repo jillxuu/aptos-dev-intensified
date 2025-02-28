@@ -1,7 +1,6 @@
 fastapi==0.109.2
 uvicorn==0.27.1
 python-dotenv==1.0.1
-anthropic==0.16.0
 openai>=1.61.1
 langchain>=0.3.0
 langchain-openai>=0.3.3
@@ -14,4 +13,5 @@ tiktoken>=0.8.0
 unstructured>=0.10.30
 markdown>=3.4.3
 python-magic>=0.4.27
-pyyaml>=6.0.1 
+pyyaml>=6.0.1
+firebase-admin>=6.4.0

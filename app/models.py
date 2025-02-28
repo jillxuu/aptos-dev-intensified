@@ -1,85 +1,167 @@
+"""Models for the chat application."""
+
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from langchain_community.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter, MarkdownHeaderTextSplitter
-from langchain_community.document_loaders import TextLoader, DirectoryLoader, UnstructuredMarkdownLoader
+from langchain.text_splitter import (
+    RecursiveCharacterTextSplitter,
+    MarkdownHeaderTextSplitter
+)
+from langchain_community.document_loaders import (
+    TextLoader,
+    DirectoryLoader,
+    UnstructuredMarkdownLoader
+)
 import os
 from dotenv import load_dotenv
 import yaml
 import re
+import logging
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 class ChatMessage(BaseModel):
+    """A chat message with metadata."""
     role: str
     content: str
-
-class ChatRequest(BaseModel):
-    messages: List[ChatMessage]
-    temperature: float = 0.7
-    chat_id: Optional[str] = None
-
-class ChatResponse(BaseModel):
-    response: str
-    sources: Optional[List[str]] = None
-    used_chunks: Optional[List[Dict[str, str]]] = None  # Store the chunks used for this response
-
-class Feedback(BaseModel):
-    message_id: str
-    query: str
-    response: str
-    rating: bool  # True for thumbs up, False for thumbs down
-    feedback_text: Optional[str] = None
-    used_chunks: Optional[List[Dict[str, str]]] = None  # Store the chunks used for this response
+    id: Optional[str] = None
     timestamp: Optional[str] = None
+    sources: Optional[List[str]] = None
+    used_chunks: Optional[List[Dict[str, Any]]] = None
 
 class ChatHistory(BaseModel):
+    """A chat history containing messages and metadata."""
     id: str
     title: str
     timestamp: str
     messages: List[ChatMessage]
+    client_id: str
+
+class ChatRequest(BaseModel):
+    """Request model for creating a new chat or adding messages."""
+    messages: List[ChatMessage]
+    temperature: float = 0.7
+    chat_id: Optional[str] = None
+    client_id: str
+
+class ChatResponse(BaseModel):
+    """Response model for chat operations."""
+    response: str
+    sources: Optional[List[str]] = None
+    used_chunks: Optional[List[Dict[str, Any]]] = None
+    chat_id: str
+    message_id: str
+
+class ChatMessageRequest(BaseModel):
+    """Request model for adding a new message to an existing chat."""
+    role: str
+    content: str
+
+class ChatMessageResponse(BaseModel):
+    """Response model for message operations."""
+    response: str
+    sources: Optional[List[str]] = None
+    used_chunks: Optional[List[Dict[str, Any]]] = None
+    message_id: str
+    user_message_id: str
+
+class ChatHistoryResponse(BaseModel):
+    """Response model for retrieving a chat history."""
+    chat_id: str
+    title: str
+    messages: List[ChatMessage]
+
+class ChatHistoriesResponse(BaseModel):
+    """Response model for retrieving multiple chat histories."""
+    histories: List[ChatHistory]
+    total_count: int
+
+class StatusResponse(BaseModel):
+    """Generic response model for operation status."""
+    status: str
+    message: str
+
+class Feedback(BaseModel):
+    """Model for user feedback on chat responses."""
+    message_id: str
+    query: str
+    response: str
+    rating: bool
+    feedback_text: Optional[str] = None
+    category: Optional[str] = None
+    used_chunks: Optional[List[Dict[str, str]]] = None
+    timestamp: Optional[str] = None
 
 # Global variables for RAG components
-embeddings = None
-vector_store = None
+embeddings: Optional[OpenAIEmbeddings] = None
+vector_store: Optional[Chroma] = None
 
 def initialize_models():
     """Initialize the RAG components."""
     global embeddings, vector_store
     
-    # Initialize embeddings with OpenAI API key
-    embeddings = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"))
-    
-    # Initialize vector store
-    if not os.path.exists("data/chroma"):
-        os.makedirs("data/chroma", exist_ok=True)
-    else:
-        # Clear existing vector store
-        import shutil
-        shutil.rmtree("data/chroma")
-        os.makedirs("data/chroma")
-    
-    vector_store = Chroma(
-        persist_directory="data/chroma",
-        embedding_function=embeddings
-    )
+    try:
+        logger.info("Initializing RAG components...")
+        
+        # Initialize embeddings with OpenAI API key
+        embeddings = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"))
+        logger.info("OpenAI embeddings initialized successfully")
+        
+        # Initialize vector store
+        vector_store_path = "data/chroma"
+        if not os.path.exists(vector_store_path):
+            logger.info(f"Creating new vector store directory at {vector_store_path}")
+            os.makedirs(vector_store_path, exist_ok=True)
+        else:
+            logger.info("Clearing existing vector store")
+            import shutil
+            shutil.rmtree(vector_store_path)
+            os.makedirs(vector_store_path)
+        
+        vector_store = Chroma(
+            persist_directory=vector_store_path,
+            embedding_function=embeddings
+        )
+        logger.info("Vector store initialized successfully")
+        
+        # Load documentation if the directory exists
+        docs_dir = "data/developer-docs/apps/nextra/pages/en"
+        if os.path.exists(docs_dir):
+            logger.info(f"Loading documentation from {docs_dir}")
+            load_aptos_docs(docs_dir)
+        else:
+            logger.warning(f"Documentation directory not found at {docs_dir}")
+            
+    except Exception as e:
+        logger.error(f"Error initializing RAG components: {str(e)}")
+        raise
 
 def get_relevant_context(query: str, k: int = 5) -> List[Dict[str, str]]:
     """
-    Get relevant context from the documentation based on the query.
+    Get relevant context from the documentation using a hybrid retrieval approach.
     Returns a list of dictionaries containing content, section, and source information.
     """
-    if not query or not vector_store:
+    if not query:
+        logger.warning("Empty query received in get_relevant_context")
+        return []
+
+    if not vector_store:
+        logger.error("Vector store not initialized. RAG functionality is disabled.")
         return []
 
     try:
-        # Get relevant documents with scores
-        docs_and_scores = vector_store.similarity_search_with_score(query, k=k*2)  # Get more docs initially
+        logger.info(f"Processing query for RAG: {query}")
         
-        # Filter and sort by relevance
-        filtered_docs = []
-        for doc, score in docs_and_scores:
+        # First, get a larger initial set of candidates using semantic search
+        initial_k = k * 3  # Get more candidates initially
+        docs_and_scores = vector_store.similarity_search_with_score(query, k=initial_k)
+        
+        # Process and score documents
+        scored_docs = []
+        for doc, semantic_score in docs_and_scores:
             if not doc or not hasattr(doc, 'page_content') or not doc.page_content:
                 continue
                 
@@ -91,52 +173,56 @@ def get_relevant_context(query: str, k: int = 5) -> List[Dict[str, str]]:
             if not content or not isinstance(content, str):
                 continue
             
-            # Create document entry with score
-            filtered_docs.append({
+            # Calculate additional relevance signals
+            keywords = set(query.lower().split())
+            doc_words = set(content.lower().split())
+            keyword_overlap = len(keywords.intersection(doc_words)) / len(keywords) if keywords else 0
+            
+            section_score = 1.0
+            section_keywords = set(section.lower().split('/'))
+            if any(kw in section_keywords for kw in keywords):
+                section_score = 1.2
+            
+            content_length = len(content.split())
+            length_score = 1.0
+            if 50 <= content_length <= 200:
+                length_score = 1.1
+            
+            context_score = 1.1 if content.startswith('Context:') else 1.0
+            
+            final_score = (
+                (1 - semantic_score) * 0.4 +
+                keyword_overlap * 0.3 +
+                section_score * 0.15 +
+                length_score * 0.1 +
+                context_score * 0.05
+            )
+            
+            scored_docs.append({
                 'content': content,
                 'section': section,
                 'source': source,
-                'score': float(score)
+                'score': final_score
             })
         
-        # Sort by score (lower is better in this case)
-        filtered_docs.sort(key=lambda x: x['score'])
+        # Sort by final score and take top k
+        scored_docs.sort(key=lambda x: x['score'], reverse=True)
+        top_docs = scored_docs[:k]
         
-        # Group by source to avoid too many duplicates from the same source
-        source_groups = {}
-        for doc in filtered_docs:
-            source = doc['source']
-            if source not in source_groups:
-                source_groups[source] = []
-            source_groups[source].append(doc)
+        # Log retrieval metrics
+        if top_docs:
+            avg_score = sum(doc['score'] for doc in top_docs) / len(top_docs)
+            logger.info(f"Retrieved {len(top_docs)} documents with average score: {avg_score:.3f}")
+            logger.debug("Top document sections retrieved:")
+            for i, doc in enumerate(top_docs[:3]):  # Log top 3 docs
+                logger.debug(f"Doc {i+1}: {doc['section']} (score: {doc['score']:.3f})")
+        else:
+            logger.warning("No relevant documents found for query")
         
-        # Take the best document from each source first, then fill with remaining best docs
-        final_docs = []
-        # First, take the best doc from each source
-        for source_docs in source_groups.values():
-            if source_docs and len(final_docs) < k:
-                final_docs.append(source_docs[0])
-        
-        # If we still need more docs, take the next best ones regardless of source
-        remaining_slots = k - len(final_docs)
-        if remaining_slots > 0:
-            # Flatten remaining docs (excluding ones we've already taken)
-            remaining_docs = [
-                doc for source_docs in source_groups.values()
-                for doc in source_docs[1:]  # Skip the first one we already took
-            ]
-            # Sort by score and take the best remaining ones
-            remaining_docs.sort(key=lambda x: x['score'])
-            final_docs.extend(remaining_docs[:remaining_slots])
-        
-        # Remove scores from final output
-        for doc in final_docs:
-            doc.pop('score', None)
-        
-        return final_docs
+        return top_docs
         
     except Exception as e:
-        print(f"Error in get_relevant_context: {e}")
+        logger.error(f"Error in get_relevant_context: {e}")
         return []
 
 def extract_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
@@ -157,7 +243,7 @@ def process_markdown_document(content: str) -> List[str]:
     metadata, clean_content = extract_frontmatter(content)
     
     if not clean_content or not isinstance(clean_content, str):
-        print(f"Invalid content type or empty content: {type(clean_content)}")
+        logger.warning(f"Invalid content type or empty content: {type(clean_content)}")
         return []
     
     clean_content = clean_content.strip()
@@ -169,8 +255,8 @@ def process_markdown_document(content: str) -> List[str]:
     clean_content = re.sub(r'export.*?}\n', '', clean_content, flags=re.MULTILINE)
     
     # More carefully handle JSX/TSX components to preserve content
-    clean_content = re.sub(r'<Callout.*?>(.*?)</Callout>', r'\1', clean_content, flags=re.DOTALL)
-    clean_content = re.sub(r'<Steps.*?>(.*?)</Steps>', r'\1', clean_content, flags=re.DOTALL)
+    clean_content = re.sub(r'<Callout.*?>(.*?)</Callout>', r'Important: \1', clean_content, flags=re.DOTALL)
+    clean_content = re.sub(r'<Steps.*?>(.*?)</Steps>', r'Steps: \1', clean_content, flags=re.DOTALL)
     clean_content = re.sub(r'<Card.*?>(.*?)</Card>', r'\1', clean_content, flags=re.DOTALL)
     
     # Remove remaining JSX tags but preserve their content
@@ -199,12 +285,12 @@ def process_markdown_document(content: str) -> List[str]:
     
     try:
         splits = markdown_splitter.split_text(clean_content)
-        # If no headers found, use a size-based splitter
+        # If no headers found, use a size-based splitter with smaller chunks and more overlap
         if not splits:
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=200,
-                separators=["\n## ", "\n### ", "\n#### ", "\n\n", "\n", " ", ""]
+                chunk_size=500,  # Smaller chunks
+                chunk_overlap=100,  # More overlap to maintain context
+                separators=["\n## ", "\n### ", "\n#### ", "\n\n", "\n", ". ", " ", ""]
             )
             return text_splitter.split_text(clean_content)
         
@@ -214,26 +300,32 @@ def process_markdown_document(content: str) -> List[str]:
             if split.page_content and isinstance(split.page_content, str):
                 content = split.page_content.strip()
                 if content:
-                    # Add header context to the content
-                    header_prefix = ""
-                    if split.metadata.get("Header 1"):
-                        header_prefix += f"{split.metadata['Header 1']}\n"
-                    if split.metadata.get("Header 2"):
-                        header_prefix += f"{split.metadata['Header 2']}\n"
-                    if split.metadata.get("Header 3"):
-                        header_prefix += f"{split.metadata['Header 3']}\n"
-                    if header_prefix:
-                        content = f"{header_prefix}\n{content}"
+                    # Build a rich context header
+                    header_context = []
+                    for level in ["Header 1", "Header 2", "Header 3", "Header 4"]:
+                        if split.metadata.get(level):
+                            header_context.append(split.metadata[level])
+                    
+                    # Add metadata from frontmatter if relevant
+                    if metadata.get('title'):
+                        header_context.insert(0, metadata['title'])
+                    if metadata.get('description'):
+                        content = f"{metadata['description']}\n\n{content}"
+                    
+                    # Combine headers into a context string
+                    if header_context:
+                        content = f"Context: {' > '.join(header_context)}\n\n{content}"
+                    
                     valid_splits.append(content)
         
         return valid_splits
     except Exception as e:
-        print(f"Error splitting markdown content: {e}")
+        logger.error(f"Error splitting markdown content: {e}")
         # Fall back to size-based splitting if header splitting fails
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
-            separators=["\n## ", "\n### ", "\n#### ", "\n\n", "\n", " ", ""]
+            chunk_size=500,
+            chunk_overlap=100,
+            separators=["\n## ", "\n### ", "\n#### ", "\n\n", "\n", ". ", " ", ""]
         )
         return text_splitter.split_text(clean_content)
 
@@ -294,44 +386,4 @@ def load_aptos_docs(docs_dir: str = "data/developer-docs/apps/nextra/pages/en") 
         except Exception as e:
             print(f"Error adding documents to vector store: {e}")
     else:
-        print("No documents were processed from the Aptos documentation.")
-
-def load_documents(directory: str = "data/documents"):
-    """Load additional documents into the vector store."""
-    global vector_store
-    
-    if not os.path.exists(directory):
-        os.makedirs(directory, exist_ok=True)
-        print(f"Created documents directory at {directory}")
-        return
-    
-    # Initialize the loader for txt files
-    loader = DirectoryLoader(
-        directory,
-        glob="**/*.txt",
-        loader_cls=TextLoader
-    )
-    
-    try:
-        # Load documents
-        documents = loader.load()
-        if not documents:
-            print("No documents found to load.")
-            return
-        
-        # Split documents into chunks
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200
-        )
-        splits = text_splitter.split_documents(documents)
-        
-        # Add to vector store
-        if vector_store is None:
-            initialize_models()
-        
-        vector_store.add_documents(splits)
-        vector_store.persist()
-        print(f"Loaded {len(splits)} document chunks into the vector store.")
-    except Exception as e:
-        print(f"Error loading documents: {e}") 
+        print("No documents were processed from the Aptos documentation.") 
