@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 
 # Create necessary directories and clone documentation
-RUN mkdir -p data/chroma && \
+RUN mkdir -p data/faiss && \
     git clone --depth 1 https://github.com/aptos-labs/developer-docs.git data/developer-docs
 
 # Set environment variables

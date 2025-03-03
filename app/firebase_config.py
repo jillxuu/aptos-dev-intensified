@@ -7,13 +7,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def initialize_firebase():
     """Initialize Firebase Admin SDK with credentials."""
     try:
         # Check if already initialized
         if not firebase_admin._apps:
             # First, try to get credentials from environment variable
-            cred_json = os.getenv('FIREBASE_CREDENTIALS')
+            cred_json = os.getenv("FIREBASE_CREDENTIALS")
             if cred_json:
                 try:
                     cred_dict = json.loads(cred_json)
@@ -23,12 +24,14 @@ def initialize_firebase():
                     cred = credentials.Certificate(cred_json)
             else:
                 # Fallback to looking for credentials file
-                cred_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'firebase-credentials.json')
+                cred_path = os.getenv(
+                    "GOOGLE_APPLICATION_CREDENTIALS", "firebase-credentials.json"
+                )
                 cred = credentials.Certificate(cred_path)
-            
+
             # Initialize the app
             firebase_admin.initialize_app(cred)
-            
+
         # Get Firestore client
         db = firestore.client()
         logger.info("Firebase initialized successfully")
@@ -36,6 +39,7 @@ def initialize_firebase():
     except Exception as e:
         logger.error(f"Failed to initialize Firebase: {str(e)}")
         raise
+
 
 # Initialize Firestore client
 try:

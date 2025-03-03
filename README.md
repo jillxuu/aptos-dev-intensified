@@ -8,8 +8,9 @@ A fine-tuned AI assistant powered by RAG (Retrieval-Augmented Generation) on Apt
 - Support for both Claude and ChatGPT models
 - FastAPI backend for efficient API handling
 - React frontend with modern UI
-- Vector storage using ChromaDB
+- Vector storage using FAISS
 - Real-time chat interface
+- Enhanced semantic search with Cohere Rerank for improved retrieval quality
 
 ## Setup
 
@@ -28,6 +29,7 @@ pip install -r requirements.txt
 3. Create a `.env` file with your API keys:
 ```
 OPENAI_API_KEY=your_openai_api_key
+COHERE_API_KEY=your_cohere_api_key  # Optional, for enhanced reranking
 ```
 
 ### Frontend

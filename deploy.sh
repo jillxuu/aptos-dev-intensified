@@ -17,6 +17,11 @@ if [ -z "$OPENAI_API_KEY" ]; then
     exit 1
 fi
 
+if [ -z "$COHERE_API_KEY" ]; then
+    echo "❌ Error: COHERE_API_KEY environment variable is required"
+    exit 1
+fi
+
 # Configure Docker to use Google Cloud credentials
 echo "🔑 Configuring Docker authentication..."
 gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
@@ -60,7 +65,8 @@ gcloud run deploy $SERVICE_NAME \
   --max-instances 10 \
   --set-env-vars="OPENAI_API_KEY=${OPENAI_API_KEY}" \
   --set-env-vars="CHAT_TEST_MODE=false" \
-  --set-secrets="FIREBASE_CREDENTIALS=$SECRET_NAME:latest"
+  --set-secrets="FIREBASE_CREDENTIALS=$SECRET_NAME:latest" \
+  --set-env-vars="COHERE_API_KEY=${COHERE_API_KEY}"
 
 echo "✅ Deployment complete!"
 echo "🌐 Service URL: $(gcloud run services describe $SERVICE_NAME --platform managed --region $REGION --format 'value(status.url)')" 
