@@ -136,7 +136,10 @@ When answering:
    - For code blocks, ALWAYS use triple backticks with language specification (e.g. ```typescript, ```python, ```move, ```json)
    - Ensure code blocks have proper indentation and formatting
    - For inline code, use single backticks
-5. Always end your response with: "For further discussions or questions about {main_topic}, you can explore the [Aptos Dev Discussions](https://github.com/aptos-labs/aptos-developer-discussions/discussions)." where {main_topic} is the main topic of the user's question.
+5. When linking to Aptos documentation, ALWAYS use the full URL with the correct structure: https://aptos.dev/en/[section]/[page]. For example:
+   - Use https://aptos.dev/en/build/cli instead of https://aptos.dev/cli
+   - Use https://aptos.dev/en/sdks/ts-sdk instead of https://aptos.dev/sdks/ts-sdk
+6. Always end your response with: "For further discussions or questions about {main_topic}, you can explore the [Aptos Dev Discussions](https://github.com/aptos-labs/aptos-developer-discussions/discussions)." where {main_topic} is the main topic of the user's question.
 
 User's question: {question}"""
 
@@ -195,9 +198,24 @@ async def generate_ai_response(
         main_topic = extract_main_topic(message)
         logger.info(f"[RAG] Extracted main topic: {main_topic}")
 
+        # Check if the query is about a process or multi-step procedure
+        process_keywords = [
+            "how",
+            "steps",
+            "guide",
+            "tutorial",
+            "process",
+            "install",
+            "setup",
+            "configure",
+        ]
+        is_process_query = any(kw in message.lower() for kw in process_keywords)
+
         # Get relevant context from documentation
         logger.info("[RAG] Retrieving relevant context...")
-        context_chunks = get_relevant_context(message, k=3)
+        context_chunks = get_relevant_context(
+            message, k=3, include_series=is_process_query
+        )
 
         if not context_chunks:
             logger.warning(
@@ -207,37 +225,74 @@ async def generate_ai_response(
             return
 
         logger.info(f"[RAG] Retrieved {len(context_chunks)} context chunks")
-        for i, chunk in enumerate(context_chunks):
-            logger.info(
-                f"[RAG] Context chunk {i+1}: Section={chunk['section']}, Score={chunk.get('score', 'N/A')}"
-            )
+
+        # Group chunks by series
+        series_chunks = {}
+        non_series_chunks = []
+
+        for chunk in context_chunks:
+            if chunk.get("is_part_of_series"):
+                series_title = chunk.get("series_title", "Unknown Series")
+                if series_title not in series_chunks:
+                    series_chunks[series_title] = []
+                series_chunks[series_title].append(chunk)
+            else:
+                non_series_chunks.append(chunk)
+
+        # Sort series chunks by position
+        for series_title, chunks in series_chunks.items():
+            chunks.sort(key=lambda x: x.get("series_position", 0))
+            logger.info(f"[RAG] Series '{series_title}' has {len(chunks)} chunks")
 
         # Format context for the prompt
-        formatted_context = "\n\n".join(
-            [
-                f"Section: {chunk['section']}\nContent: {chunk['content']}"
-                for chunk in context_chunks
-            ]
-        )
+        formatted_context = ""
+
+        # First add series chunks with series context
+        for series_title, chunks in series_chunks.items():
+            formatted_context += f"\n\nSeries: {series_title} ({len(chunks)} parts)\n"
+
+            # Add overview of the series
+            if len(chunks) > 1:
+                formatted_context += f"This is a {len(chunks)}-part series covering: "
+                formatted_context += ", ".join(
+                    [f"Part {c.get('series_position', 0)}" for c in chunks]
+                )
+                formatted_context += "\n\n"
+
+            # Add each chunk with its position in the series
+            for chunk in chunks:
+                formatted_context += f"Part {chunk.get('series_position', 0)}/{chunk.get('total_steps', 0)}: {chunk.get('section', '')}\n"
+                if chunk.get("summary"):
+                    formatted_context += f"Summary: {chunk.get('summary')}\n"
+                formatted_context += f"Content: {chunk.get('content', '')}\n\n"
+
+        # Then add non-series chunks
+        for chunk in non_series_chunks:
+            formatted_context += f"\n\nSection: {chunk.get('section', '')}\n"
+            if chunk.get("summary"):
+                formatted_context += f"Summary: {chunk.get('summary')}\n"
+            formatted_context += f"Content: {chunk.get('content', '')}\n"
+
         logger.info(
             f"[RAG] Total formatted context length: {len(formatted_context)} characters"
         )
 
+        # Prepare the prompt with the context
+        prompt = SYSTEM_TEMPLATE.format(
+            context=formatted_context, question=message, main_topic=main_topic
+        )
+
+        # Generate the response
+        logger.info("[RAG] Generating response...")
+
         # Create messages for the chat
         messages = [
-            {
-                "role": "system",
-                "content": SYSTEM_TEMPLATE.format(
-                    context=formatted_context, question=message, main_topic=main_topic
-                ),
-            },
+            {"role": "system", "content": prompt},
             {"role": "user", "content": message},
         ]
 
-        logger.info("[RAG] Starting streaming response generation...")
-        full_response = ""
-
         # Use astream instead of invoke for streaming
+        full_response = ""
         async for chunk in chat_model.astream(messages):
             if chunk.content:
                 full_response += chunk.content
@@ -247,41 +302,63 @@ async def generate_ai_response(
             f"[RAG] Completed response generation. Total response length: {len(full_response)} characters"
         )
 
-        # Update the assistant message in the chat history with the full response
+        # Update chat history if chat_id is provided
         if chat_id:
             try:
                 # Get the chat history
                 history = await firestore_chat.get_chat_history(chat_id)
-                if history:
-                    # Find the last assistant message (which should be empty)
-                    assistant_message_found = False
+                if history and history.messages:
+                    # Find the last assistant message
                     for i in range(len(history.messages) - 1, -1, -1):
                         if (
                             history.messages[i].role == "assistant"
-                            and not history.messages[i].content
+                            and history.messages[i].content == ""
                         ):
                             # Update the content
                             history.messages[i].content = full_response
                             # Update the chat history
                             await firestore_chat.update_chat_history(history)
-                            assistant_message_found = True
-                            logger.info(
-                                f"[RAG] Updated assistant message in chat {chat_id}"
-                            )
                             break
-
-                    if not assistant_message_found:
-                        logger.warning(
-                            f"[RAG] No empty assistant message found in chat {chat_id}"
-                        )
             except Exception as e:
                 logger.error(
-                    f"[RAG] Error updating assistant message: {str(e)}", exc_info=True
+                    f"Error updating chat history with response: {str(e)}",
+                    exc_info=True,
                 )
 
     except Exception as e:
-        logger.error(f"[RAG] Error generating AI response: {str(e)}", exc_info=True)
-        yield "I apologize, but I encountered an error while processing your request. Please try again."
+        logger.error(f"Error generating AI response: {str(e)}", exc_info=True)
+        yield "I apologize, but I encountered an error while generating a response. Please try again later."
+
+
+def format_source_to_url(source_path: str) -> str:
+    """
+    Convert a documentation source path to a proper aptos.dev URL.
+
+    Args:
+        source_path: The relative path from the documentation directory
+
+    Returns:
+        A properly formatted URL to the documentation on aptos.dev
+    """
+    if not source_path:
+        return ""
+
+    # Remove file extension (.md or .mdx)
+    if source_path.endswith(".md") or source_path.endswith(".mdx"):
+        source_path = os.path.splitext(source_path)[0]
+
+    # Handle index files
+    if source_path.endswith("/index") or source_path == "index":
+        source_path = source_path[:-6] if source_path.endswith("/index") else ""
+
+    # Format the URL
+    url_path = source_path.replace(os.path.sep, "/")
+
+    # Ensure the URL starts with /en/ for the English documentation
+    if not url_path.startswith("en/"):
+        url_path = f"en/{url_path}"
+
+    return f"https://aptos.dev/{url_path}"
 
 
 @router.post("/chat/new/stream")
@@ -320,13 +397,16 @@ async def new_chat_stream(request: ChatRequest):
         else:
             metadata = {
                 "sources": [
-                    chunk["source"] for chunk in context_chunks if "source" in chunk
+                    format_source_to_url(chunk["source"])
+                    for chunk in context_chunks
+                    if "source" in chunk
                 ],
                 "used_chunks": [
                     {
                         "content": chunk["content"],
                         "section": chunk["section"],
-                        "source": chunk.get("source", ""),
+                        "source": format_source_to_url(chunk.get("source", "")),
+                        "summary": chunk.get("summary", ""),
                     }
                     for chunk in context_chunks
                 ],
@@ -449,13 +529,16 @@ async def add_chat_message_stream(chat_id: str, message: ChatMessageRequest):
         else:
             metadata = {
                 "sources": [
-                    chunk["source"] for chunk in context_chunks if "source" in chunk
+                    format_source_to_url(chunk["source"])
+                    for chunk in context_chunks
+                    if "source" in chunk
                 ],
                 "used_chunks": [
                     {
                         "content": chunk["content"],
                         "section": chunk["section"],
-                        "source": chunk.get("source", ""),
+                        "source": format_source_to_url(chunk.get("source", "")),
+                        "summary": chunk.get("summary", ""),
                     }
                     for chunk in context_chunks
                 ],
