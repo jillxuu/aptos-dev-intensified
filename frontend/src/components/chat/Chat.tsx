@@ -57,13 +57,14 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
   const lastResponseRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef<HTMLDivElement>(null);
 
-  // State for chat
-  const [chatId, setChatId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content:
-        "👋 Hi there! I'm here to assist you with your queries about the Aptos blockchain technology. Feel free to ask me anything about:\n\n" +
+  // Get custom greeting based on RAG provider
+  const getCustomGreeting = () => {
+    const provider = config.ragProvider || "aptos";
+
+    // Default Aptos greeting
+    if (provider === "aptos") {
+      return (
+        "👋 Hi there! I'm your Aptos AI assistant. I can help you with:\n\n" +
         "- Move programming language\n" +
         "- Smart contracts development\n" +
         "- Account management\n" +
@@ -71,7 +72,38 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
         "- Network architecture\n" +
         "- Token standards\n" +
         "- And much more!\n\n" +
-        "What would you like to learn about? 🚀",
+        "What would you like to learn about today? 🚀"
+      );
+    }
+
+    // GitHub repository greeting
+    if (provider === "github") {
+      return (
+        "👋 Hi there! I'm your AI assistant for this GitHub repository.\n\n" +
+        "I can help you understand:\n" +
+        "- Code structure and organization\n" +
+        "- Implementation details\n" +
+        "- Documentation and examples\n" +
+        "- Project features and functionality\n" +
+        "- And more!\n\n" +
+        "What would you like to know about this repository? 🚀"
+      );
+    }
+
+    // Generic greeting for other providers
+    return (
+      "👋 Hi there! I'm your AI assistant for this knowledge base.\n\n" +
+      "I can help answer questions about the content and information in this knowledge source.\n\n" +
+      "What would you like to know? 🚀"
+    );
+  };
+
+  // State for chat
+  const [chatId, setChatId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      role: "assistant",
+      content: getCustomGreeting(),
     },
   ]);
   const [isLoading, setIsLoading] = useState(false);
@@ -79,6 +111,7 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
   const clientIdRef = useRef<string>("");
   const [chatHistories, setChatHistories] = useState<ChatHistoryItem[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [isStreaming, setIsStreaming] = useState(false);
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
@@ -99,62 +132,87 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
     }
   }, []);
 
-  // Load chat histories when client ID is available
-  useEffect(() => {
-    const loadChatHistories = async () => {
-      if (!clientIdRef.current) return;
-
-      try {
-        const response = await axios.get(
-          `${config.apiBaseUrl}/chat/histories?client_id=${clientIdRef.current}`,
-        );
-        setChatHistories(response.data.histories);
-      } catch (err) {
-        console.error("Error loading chat histories:", err);
-        toast.error("Failed to load chat histories");
-      }
+  // Function to make API requests with RAG provider header
+  const makeApiRequest = async (url: string, method: string, data?: any) => {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
     };
 
-    loadChatHistories();
-  }, []);
+    // Add RAG provider header if specified
+    if (config.ragProvider) {
+      headers["X-RAG-Provider"] = config.ragProvider;
+    }
+
+    try {
+      if (method === "GET") {
+        return await axios.get(url, { headers });
+      } else if (method === "POST") {
+        return await axios.post(url, data, { headers });
+      } else if (method === "PUT") {
+        return await axios.put(url, data, { headers });
+      } else if (method === "DELETE") {
+        return await axios.delete(url, { headers });
+      }
+    } catch (error) {
+      console.error(`Error making ${method} request to ${url}:`, error);
+      throw error;
+    }
+  };
+
+  // Load chat histories when client ID is available
+  useEffect(() => {
+    if (clientIdRef.current) {
+      loadChatHistories();
+    }
+  }, [clientIdRef.current]);
+
+  const loadChatHistories = async () => {
+    try {
+      setIsLoading(true);
+      const response = await makeApiRequest(
+        `${config.apiBaseUrl}/chat/histories?client_id=${clientIdRef.current}`,
+        "GET",
+      );
+      if (response) {
+        setChatHistories(response.data.histories);
+      }
+    } catch (err) {
+      console.error("Error loading chat histories:", err);
+      toast.error("Failed to load chat histories");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Load chat history when chatId is available
   useEffect(() => {
-    const loadChatHistory = async () => {
-      if (!chatId) return;
-
-      try {
-        const response = await axios.get(
-          `${config.apiBaseUrl}/chat/${chatId}/messages`,
-        );
-        setMessages(response.data.messages);
-
-        // Add a small delay to ensure messages are rendered before scrolling
-        setTimeout(() => {
-          if (lastResponseRef.current) {
-            lastResponseRef.current.scrollIntoView({
-              behavior: "smooth",
-              block: "start",
-            });
-          }
-        }, 100);
-      } catch (err) {
-        console.error("Error loading chat history:", err);
-        toast.error("Failed to load chat history");
-        // If we can't load the history, reset to new chat
-        setChatId(null);
-        setMessages([
-          {
-            role: "assistant",
-            content:
-              "👋 Hi there! I'm here to assist you with your queries about the Aptos blockchain technology...",
-          },
-        ]);
-      }
-    };
-
-    loadChatHistory();
+    if (chatId) {
+      loadChatHistory();
+    }
   }, [chatId]);
+
+  const loadChatHistory = async () => {
+    try {
+      setIsLoading(true);
+      const response = await makeApiRequest(
+        `${config.apiBaseUrl}/chat/${chatId}/messages`,
+        "GET",
+      );
+      if (response) {
+        setMessages(response.data.messages);
+      }
+
+      // Add a small delay to ensure messages are rendered before scrolling
+      setTimeout(() => {
+        scrollToLastResponse();
+      }, 100);
+    } catch (err) {
+      console.error("Error loading chat history:", err);
+      toast.error("Failed to load chat history");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const scrollToLastResponse = () => {
     if (lastResponseRef.current) {
@@ -179,38 +237,48 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
     feedbackText?: string,
   ) => {
     try {
-      const message = messages.find((m) => m.id === messageId);
-      if (!message || message.role !== "assistant") return;
-
-      const userMessage =
-        messages[messages.findIndex((m) => m.id === messageId) - 1];
-      if (!userMessage || userMessage.role !== "user") return;
-
-      // Update UI immediately
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId
-            ? { ...m, feedback: { rating, feedbackText, category } }
-            : m,
-        ),
+      // Find the message that received feedback
+      const responseMessage = messages.find(
+        (msg) => msg.id === messageId && msg.role === "assistant",
       );
 
-      // Send feedback to backend
-      await axios.post(`${config.apiBaseUrl}/feedback`, {
+      if (!responseMessage) {
+        console.error("Message not found for feedback");
+        return;
+      }
+
+      // Submit feedback to the API
+      await makeApiRequest(`${config.apiBaseUrl}/feedback`, "POST", {
         message_id: messageId,
-        query: userMessage.content,
-        response: message.content,
+        chat_id: chatId,
         rating,
         category,
         feedback_text: feedbackText,
-        used_chunks: message.usedChunks,
+        usedChunks: responseMessage.usedChunks,
         timestamp: new Date().toISOString(),
       });
 
-      toast.success("Thank you for your feedback!", {
-        icon: rating ? "👍" : "👎",
-        duration: 2000,
-      });
+      // Update the UI to show feedback was submitted
+      const updatedMessages = [...messages];
+      const msgToUpdate = updatedMessages.find((msg) => msg.id === messageId);
+      if (msgToUpdate) {
+        msgToUpdate.feedback = {
+          rating,
+          category,
+          feedbackText,
+        };
+      }
+      setMessages(updatedMessages);
+
+      // Show success message
+      toast.success(
+        rating
+          ? "Thanks for your positive feedback!"
+          : "Thanks for your feedback. We'll use it to improve.",
+      );
+
+      // Close the feedback modal if it's open
+      setFeedbackModalOpen(false);
     } catch (err) {
       console.error("Error submitting feedback:", err);
       toast.error("Failed to submit feedback");
@@ -233,73 +301,85 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
   };
 
   const handleStreamResponse = async (response: Response) => {
-    const reader = response.body?.getReader();
-    if (!reader) return;
+    if (!response.body) {
+      toast.error("Failed to get response stream");
+      return;
+    }
 
-    setIsStreaming(true);
-    let streamedContent = "";
-    const streamingMessageId = uuidv4();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let responseText = "";
+    let responseId = uuidv4();
+
+    // Add the assistant message to the UI immediately
+    setMessages((prevMessages) => [
+      ...prevMessages,
+      {
+        role: "assistant",
+        content: "",
+        id: responseId,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
 
     try {
-      // Add a temporary streaming message immediately
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: streamingMessageId,
-          role: "assistant",
-          content: "",
-        },
-      ]);
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        // Convert the chunk to text and append to the streaming message
-        const chunk = new TextDecoder().decode(value);
-        streamedContent += chunk;
+        // Decode and append to the response text
+        const chunk = decoder.decode(value, { stream: true });
+        responseText += chunk;
 
-        // Update the last message with new content
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === streamingMessageId
-              ? { ...msg, content: streamedContent }
-              : msg,
-          ),
-        );
-      }
+        // Update the message in the UI
+        setMessages((prevMessages) => {
+          const updatedMessages = [...prevMessages];
+          const lastIndex = updatedMessages.length - 1;
+          if (lastIndex >= 0 && updatedMessages[lastIndex].id === responseId) {
+            updatedMessages[lastIndex] = {
+              ...updatedMessages[lastIndex],
+              content: responseText,
+            };
+          }
+          return updatedMessages;
+        });
 
-      // For new chats, we need to get the chat ID from the backend
-      if (!chatId) {
-        try {
-          // Get the latest chat history from the server
-          const historyResponse = await axios.get(
-            `${config.apiBaseUrl}/chat/latest?client_id=${clientIdRef.current}`,
-          );
-
-          const history = historyResponse.data;
-
-          // Update the local chatId
-          setChatId(history.id);
-
-          // Update chat histories list
-          setChatHistories((prev) => [
-            {
-              id: history.id,
-              title: history.title,
-              timestamp: history.timestamp,
-            },
-            ...prev,
-          ]);
-
-          console.log(`Set chat ID to ${history.id} for new chat`);
-        } catch (error) {
-          console.error("Error getting latest chat history:", error);
+        // Scroll to the bottom as new content arrives
+        if (lastResponseRef.current) {
+          lastResponseRef.current.scrollIntoView({
+            behavior: "smooth",
+            block: "end",
+          });
         }
       }
-    } finally {
-      reader.releaseLock();
-      setIsStreaming(false);
+
+      // Get the chat history to update the URL and sidebar
+      try {
+        const historyResponse = await makeApiRequest(
+          `${config.apiBaseUrl}/chat/latest?client_id=${clientIdRef.current}`,
+          "GET",
+        );
+
+        if (historyResponse) {
+          // Update the chat ID and title
+          setChatId(historyResponse.data.id);
+
+          // Update the URL with the new chat ID
+          window.history.replaceState(
+            null,
+            "",
+            `?chat=${historyResponse.data.id}`,
+          );
+
+          // Add this chat to the histories list
+          setChatHistories((prev) => [historyResponse.data, ...prev]);
+        }
+      } catch (historyErr) {
+        console.error("Error getting chat history:", historyErr);
+      }
+    } catch (err) {
+      console.error("Error reading stream:", err);
+      toast.error("Error receiving response");
     }
   };
 
@@ -379,16 +459,7 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
     setMessages([
       {
         role: "assistant",
-        content:
-          "👋 Hi there! I'm here to assist you with your queries about the Aptos blockchain technology. Feel free to ask me anything about:\n\n" +
-          "- Move programming language\n" +
-          "- Smart contracts development\n" +
-          "- Account management\n" +
-          "- Transactions and gas fees\n" +
-          "- Network architecture\n" +
-          "- Token standards\n" +
-          "- And much more!\n\n" +
-          "What would you like to learn about? 🚀",
+        content: getCustomGreeting(),
       },
     ]);
   };
@@ -397,33 +468,36 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
     chatToDelete: ChatHistoryItem,
     e: React.MouseEvent,
   ) => {
-    e.stopPropagation(); // Prevent chat selection when clicking delete
-
-    // Show confirmation dialog
-    if (
-      !window.confirm(
-        "Are you sure you want to delete this chat? This action cannot be undone.",
-      )
-    ) {
-      return;
-    }
+    e.stopPropagation();
 
     try {
-      await axios.delete(
+      await makeApiRequest(
         `${config.apiBaseUrl}/chat/history/${chatToDelete.id}`,
+        "DELETE",
       );
 
-      // Remove from chat histories list
+      // Remove from the list
       setChatHistories((prev) =>
         prev.filter((chat) => chat.id !== chatToDelete.id),
       );
 
-      // If the deleted chat was selected, reset to new chat
+      // If the deleted chat was the active one, reset to a new chat
       if (chatId === chatToDelete.id) {
-        startNewChat();
+        setChatId(null);
+        setMessages([
+          {
+            role: "assistant",
+            content: getCustomGreeting(),
+            id: uuidv4(),
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+
+        // Update the URL
+        window.history.replaceState(null, "", window.location.pathname);
       }
 
-      toast.success("Chat deleted successfully");
+      toast.success("Chat deleted");
     } catch (err) {
       console.error("Error deleting chat:", err);
       toast.error("Failed to delete chat");

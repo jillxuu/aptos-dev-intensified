@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import StreamingResponse
 from app.models import (
     ChatRequest,
@@ -13,12 +13,13 @@ from app.models import (
     StatusResponse,
     get_relevant_context,
 )
+from app.rag_providers import RAGProviderRegistry
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.prompts import ChatPromptTemplate
 import os
 import logging
 import numpy as np
-from typing import List, AsyncGenerator
+from typing import List, AsyncGenerator, Dict, Any
 from datetime import datetime
 import uuid
 from app.db_models import firestore_chat
@@ -186,7 +187,7 @@ async def stream_response(response_text: str):
 
 
 async def generate_ai_response(
-    message: str, chat_id: str = None
+    message: str, chat_id: str = None, rag_provider_name: str = None
 ) -> AsyncGenerator[str, None]:
     """Generate AI response using RAG."""
     try:
@@ -211,9 +212,17 @@ async def generate_ai_response(
         ]
         is_process_query = any(kw in message.lower() for kw in process_keywords)
 
+        # Get the RAG provider
+        try:
+            rag_provider = RAGProviderRegistry.get_provider(rag_provider_name)
+            logger.info(f"[RAG] Using provider: {rag_provider.name}")
+        except ValueError as e:
+            logger.warning(f"[RAG] Provider error: {str(e)}, using default provider")
+            rag_provider = RAGProviderRegistry.get_provider()
+
         # Get relevant context from documentation
         logger.info("[RAG] Retrieving relevant context...")
-        context_chunks = get_relevant_context(
+        context_chunks = await rag_provider.get_relevant_context(
             message, k=3, include_series=is_process_query
         )
 
@@ -362,91 +371,49 @@ def format_source_to_url(source_path: str) -> str:
 
 
 @router.post("/chat/new/stream")
-async def new_chat_stream(request: ChatRequest):
+async def new_chat_stream(request: ChatRequest, request_obj: Request):
+    """Create a new chat and stream the response."""
     try:
-        if not request.messages or len(request.messages) != 1:
-            raise HTTPException(
-                status_code=400, detail="New chat must start with exactly one message"
-            )
+        # Extract the Knowledge provider name from the request headers
+        rag_provider_name = request_obj.headers.get("X-RAG-Provider")
 
-        user_message = request.messages[0]
-        if user_message.role != "user":
-            raise HTTPException(
-                status_code=400, detail="First message must be from user"
-            )
-
-        # Validate client_id
-        if (
-            not request.client_id
-            or request.client_id == "undefined"
-            or request.client_id == "null"
-        ):
-            raise HTTPException(status_code=400, detail="Invalid client ID")
-
-        # Create new chat with UUID and initialize with both messages
+        # Create a new chat ID
         chat_id = str(uuid.uuid4())
-        assistant_message_id = str(uuid.uuid4())
 
-        logger.info(f"Creating new chat {chat_id} for client {request.client_id}")
-
-        # Get context and prepare metadata before streaming
-        context_chunks = get_relevant_context(user_message.content, k=3)
-        if not context_chunks:
-            logger.warning("[RAG] No context chunks retrieved for new chat")
-            metadata = {"sources": [], "used_chunks": []}
-        else:
-            metadata = {
-                "sources": [
-                    format_source_to_url(chunk["source"])
-                    for chunk in context_chunks
-                    if "source" in chunk
-                ],
-                "used_chunks": [
-                    {
-                        "content": chunk["content"],
-                        "section": chunk["section"],
-                        "source": format_source_to_url(chunk.get("source", "")),
-                        "summary": chunk.get("summary", ""),
-                    }
-                    for chunk in context_chunks
-                ],
-            }
-
-        # Create initial chat history with both messages
-        new_chat = ChatHistory(
-            id=chat_id,
-            title=user_message.content[:50] + "...",
-            timestamp=datetime.now().isoformat(),
-            client_id=request.client_id,
-            messages=[
-                ChatMessage(
-                    id=str(uuid.uuid4()),
-                    role="user",
-                    content=user_message.content,
-                    timestamp=datetime.now().isoformat(),
-                ),
-                ChatMessage(
-                    id=assistant_message_id,
-                    role="assistant",
-                    content="",  # Will be filled during streaming
-                    timestamp=datetime.now().isoformat(),
-                    sources=metadata["sources"],
-                    used_chunks=metadata["used_chunks"],
-                ),
-            ],
+        # Get the user's message
+        user_message = next(
+            (msg for msg in request.messages if msg.role == "user"), None
         )
 
-        # Save initial chat history with metadata
-        await firestore_chat.create_chat_history(new_chat)
-        logger.info(f"Created new chat history {chat_id}")
+        if not user_message:
+            raise HTTPException(status_code=400, detail="No user message found")
 
+        # Generate a title for the chat
+        chat_title = (
+            user_message.content[:50] + "..."
+            if len(user_message.content) > 50
+            else user_message.content
+        )
+
+        # Create a new chat history
+        chat_history = ChatHistory(
+            id=chat_id,
+            title=chat_title,
+            timestamp=datetime.now().isoformat(),
+            messages=request.messages,
+            client_id=request.client_id,
+        )
+
+        # Save the chat history
+        await firestore_chat.save_chat_history(chat_history)
+
+        # Generate the response
         return StreamingResponse(
-            generate_ai_response(user_message.content, chat_id),
+            generate_ai_response(user_message.content, chat_id, rag_provider_name),
             media_type="text/event-stream",
         )
-
     except Exception as e:
-        logger.error(f"Error creating new chat stream: {str(e)}", exc_info=True)
+        logger.error(f"Error creating new chat: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -500,90 +467,41 @@ async def get_latest_chat_history(client_id: str):
 
 
 @router.post("/chat/{chat_id}/message/stream")
-async def add_chat_message_stream(chat_id: str, message: ChatMessageRequest):
+async def add_chat_message_stream(
+    chat_id: str, message: ChatMessageRequest, request: Request
+):
+    """Add a message to an existing chat and stream the response."""
     try:
-        if message.role != "user":
-            raise HTTPException(
-                status_code=400, detail="Only user messages can be added directly"
-            )
+        # Extract the RAG provider name from the request headers
+        rag_provider_name = request.headers.get("X-RAG-Provider")
 
-        # Ensure we're using the path parameter chat_id, not any chat_id in the message body
-        # This ensures we're updating the correct chat
-        logger.info(f"Adding message to existing chat: {chat_id}")
+        # Get the chat history
+        chat_history = await firestore_chat.get_chat_history(chat_id)
 
-        # Validate chat_id
-        if not chat_id or chat_id == "undefined" or chat_id == "null":
-            raise HTTPException(status_code=400, detail="Invalid chat ID")
+        if not chat_history:
+            raise HTTPException(status_code=404, detail=f"Chat {chat_id} not found")
 
-        # Get existing chat history
-        history = await firestore_chat.get_chat_history(chat_id)
-        if not history:
-            logger.error(f"Chat history not found: {chat_id}")
-            raise HTTPException(status_code=404, detail="Chat history not found")
-
-        # Create assistant message with metadata before streaming
-        context_chunks = get_relevant_context(message.content, k=3)
-        if not context_chunks:
-            logger.warning("[RAG] No context chunks retrieved for message")
-            metadata = {"sources": [], "used_chunks": []}
-        else:
-            metadata = {
-                "sources": [
-                    format_source_to_url(chunk["source"])
-                    for chunk in context_chunks
-                    if "source" in chunk
-                ],
-                "used_chunks": [
-                    {
-                        "content": chunk["content"],
-                        "section": chunk["section"],
-                        "source": format_source_to_url(chunk.get("source", "")),
-                        "summary": chunk.get("summary", ""),
-                    }
-                    for chunk in context_chunks
-                ],
-            }
-
-        # Add both user and assistant messages to history
-        user_message_id = str(uuid.uuid4())
-        assistant_message_id = str(uuid.uuid4())
-
-        # Add user message
-        history.messages.append(
-            ChatMessage(
-                id=user_message_id,
-                role="user",
-                content=message.content,
-                timestamp=datetime.now().isoformat(),
-            )
-        )
-
-        # Add empty assistant message (will be filled during streaming)
-        assistant_message = ChatMessage(
-            id=assistant_message_id,
-            role="assistant",
-            content="",  # Will be filled during streaming
+        # Create a new message
+        new_message = ChatMessage(
+            id=str(uuid.uuid4()),
+            role=message.role,
+            content=message.content,
             timestamp=datetime.now().isoformat(),
-            sources=metadata["sources"],
-            used_chunks=metadata["used_chunks"],
         )
-        history.messages.append(assistant_message)
 
-        # Update timestamp to ensure it's the most recent
-        history.timestamp = datetime.now().isoformat()
+        # Add the message to the chat history
+        chat_history.messages.append(new_message)
 
-        # Update history with new messages including metadata
-        await firestore_chat.update_chat_history(history)
+        # Save the updated chat history
+        await firestore_chat.save_chat_history(chat_history)
 
-        logger.info(f"Updated chat history {chat_id} with new messages")
-
+        # Generate the response
         return StreamingResponse(
-            generate_ai_response(message.content, chat_id),
+            generate_ai_response(message.content, chat_id, rag_provider_name),
             media_type="text/event-stream",
         )
-
     except Exception as e:
-        logger.error(f"Error adding chat message stream: {str(e)}", exc_info=True)
+        logger.error(f"Error adding message to chat: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -605,4 +523,33 @@ async def delete_chat_history(chat_id: str):
         return {"status": "success", "message": "Chat history deleted"}
     except Exception as e:
         logger.error(f"Error deleting chat history: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/rag/providers")
+async def list_rag_providers():
+    """List all available Knowledge providers."""
+    try:
+        providers = RAGProviderRegistry.list_providers()
+        return {"providers": providers}
+    except Exception as e:
+        logger.error(f"Error listing Knowledge providers: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/rag/provider/{provider_name}/initialize")
+async def initialize_rag_provider(provider_name: str, config: Dict[str, Any]):
+    """Initialize a Knowledge provider with the given configuration."""
+    try:
+        provider = RAGProviderRegistry.get_provider(provider_name)
+        await provider.initialize(config)
+        return {
+            "status": "success",
+            "message": f"Initialized Knowledge provider {provider_name}",
+        }
+    except ValueError as e:
+        logger.error(f"Error initializing Knowledge provider: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error initializing Knowledge provider: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

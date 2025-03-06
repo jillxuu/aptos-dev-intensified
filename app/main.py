@@ -4,6 +4,9 @@ from app.routes import chat
 from app.models import initialize_models
 import os
 
+# Import the GitHub provider to ensure it's registered
+from app.rag_providers.github_provider import github_provider
+
 app = FastAPI(
     title="Aptos Dev Assistant API",
     description="API for the Aptos Developer Assistant chatbot",

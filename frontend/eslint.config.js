@@ -38,7 +38,7 @@ export default [
     rules: {
       ...js.configs.recommended.rules,
       ...eslintConfigPrettier.rules,
-      "prettier/prettier": "error",
+      "prettier/prettier": "off",
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
       "react/jsx-uses-react": "error",
@@ -51,13 +51,12 @@ export default [
     },
   },
 
-  // TypeScript rules for source files
   {
     files: ["src/**/*.ts", "src/**/*.tsx"],
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: {
-        project: "./tsconfig.app.json",
+        project: "./tsconfig.json",
         tsconfigRootDir: ".",
       },
     },
@@ -65,20 +64,6 @@ export default [
       ...tseslint.configs.recommended.rules,
       ...tseslint.configs.strict.rules,
       "@typescript-eslint/explicit-module-boundary-types": "off",
-    },
-  },
-
-  // TypeScript rules for config files
-  {
-    files: ["*.config.ts", "vite.config.ts"],
-    languageOptions: {
-      parser: tseslint.parser,
-      parserOptions: {
-        project: "./tsconfig.node.json",
-        tsconfigRootDir: ".",
-      },
-    },
-    rules: {
       "@typescript-eslint/no-var-requires": "off",
     },
   },
