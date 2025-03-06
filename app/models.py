@@ -24,6 +24,7 @@ from nltk.corpus import stopwords
 import string
 import hashlib
 import pickle
+import asyncio
 
 load_dotenv()
 
@@ -461,11 +462,12 @@ def bm25_search(query, k=10):
     return results
 
 
-def batch_generate_summaries(
+async def batch_generate_summaries(
     contents: List[str], max_length: int = 100, batch_size: int = 10
 ) -> List[str]:
     """
     Generate summaries for a batch of document chunks.
+    This function processes summaries in parallel without blocking the main thread.
 
     Args:
         contents: List of document chunk contents to summarize
@@ -481,7 +483,7 @@ def batch_generate_summaries(
     logger.info(f"[SUMMARY] Batch processing {len(contents)} documents for summaries")
 
     # Initialize results list
-    summaries = []
+    summaries = [None] * len(contents)
 
     # Track which items need to be processed
     to_process = []
@@ -491,17 +493,15 @@ def batch_generate_summaries(
     for i, content in enumerate(contents):
         if not content or len(content) < 100:
             # For very short content, just use it as is
-            summaries.append(content)
+            summaries[i] = content
         else:
             cached_summary = get_cached_summary(content)
             if cached_summary:
-                summaries.append(cached_summary)
+                summaries[i] = cached_summary
             else:
                 # Mark for processing
                 to_process.append(content)
                 to_process_indices.append(i)
-                # Add a placeholder
-                summaries.append(None)
 
     # If nothing to process, return early
     if not to_process:
@@ -521,29 +521,94 @@ def batch_generate_summaries(
             f"[SUMMARY] Processing batch {i//batch_size + 1}/{(len(to_process) + batch_size - 1) // batch_size}"
         )
 
-        # Process each item in the batch
-        for j, content in enumerate(batch):
-            try:
-                # Generate summary
-                summary = generate_chunk_summary(content, max_length)
+        # Create tasks for each content in the batch
+        tasks = [generate_chunk_summary(content, max_length) for content in batch]
 
-                # Update the results list
-                summaries[batch_indices[j]] = summary
+        # Process batch in parallel
+        try:
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            except Exception as e:
-                logger.error(f"[SUMMARY] Error generating summary in batch: {e}")
-                # Use a fallback summary
-                fallback = (
-                    content[: max_length - 3] + "..."
-                    if len(content) > max_length
-                    else content
-                )
-                summaries[batch_indices[j]] = fallback
+            # Update the results list
+            for j, result in enumerate(batch_results):
+                if isinstance(result, Exception):
+                    logger.error(
+                        f"[SUMMARY] Error generating summary in batch: {result}"
+                    )
+                    # Use a fallback summary
+                    content = batch[j]
+                    fallback = (
+                        content[: max_length - 3] + "..."
+                        if len(content) > max_length
+                        else content
+                    )
+                    summaries[batch_indices[j]] = fallback
+                else:
+                    summaries[batch_indices[j]] = result
+
+        except Exception as e:
+            logger.error(f"[SUMMARY] Error in batch processing: {e}")
 
     # Save the cache after processing all batches
     save_summary_cache()
 
     return summaries
+
+
+async def generate_chunk_summary(content: str, max_length: int = 100) -> str:
+    """
+    Generate a concise summary of a document chunk using OpenAI.
+    Uses a cache to avoid regenerating summaries for unchanged content.
+
+    Args:
+        content: The document chunk content to summarize
+        max_length: Maximum length of the summary in characters
+
+    Returns:
+        A concise summary of the document chunk
+    """
+    if not content or len(content) < 100:
+        # For very short content, just return it as is
+        return content
+
+    # Check if we have a cached summary
+    cached_summary = get_cached_summary(content)
+    if cached_summary:
+        logger.debug(f"[SUMMARY] Using cached summary: {cached_summary[:30]}...")
+        return cached_summary
+
+    try:
+        # Use OpenAI to generate a summary
+        response = await openai_client.chat.completions.create(
+            model="gpt-3.5-turbo",  # Using a smaller model for efficiency
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"Create a concise summary (maximum {max_length} characters) that captures the key information in this text. Focus on the main concepts, definitions, or procedures.",
+                },
+                {"role": "user", "content": content},
+            ],
+            max_tokens=100,  # Limit token usage
+            temperature=0.3,  # Lower temperature for more focused summaries
+        )
+
+        summary = response.choices[0].message.content.strip()
+
+        # Ensure the summary isn't too long
+        if len(summary) > max_length:
+            summary = summary[: max_length - 3] + "..."
+
+        logger.debug(f"Generated summary: {summary}")
+
+        # Cache the summary
+        cache_summary(content, summary)
+
+        return summary
+    except Exception as e:
+        logger.error(f"Error generating summary: {e}")
+        # If summarization fails, return a truncated version of the original content
+        return (
+            content[: max_length - 3] + "..." if len(content) > max_length else content
+        )
 
 
 def initialize_models():
@@ -1702,64 +1767,7 @@ def load_aptos_docs(docs_dir: str = "data/developer-docs/apps/nextra/pages/en") 
         logger.error(f"[RAG-DOCS] Error processing documentation: {e}")
 
 
-def generate_chunk_summary(content: str, max_length: int = 100) -> str:
-    """
-    Generate a concise summary of a document chunk using OpenAI.
-    Uses a cache to avoid regenerating summaries for unchanged content.
-
-    Args:
-        content: The document chunk content to summarize
-        max_length: Maximum length of the summary in characters
-
-    Returns:
-        A concise summary of the document chunk
-    """
-    if not content or len(content) < 100:
-        # For very short content, just return it as is
-        return content
-
-    # Check if we have a cached summary
-    cached_summary = get_cached_summary(content)
-    if cached_summary:
-        logger.debug(f"[SUMMARY] Using cached summary: {cached_summary[:30]}...")
-        return cached_summary
-
-    try:
-        # Use OpenAI to generate a summary
-        response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",  # Using a smaller model for efficiency
-            messages=[
-                {
-                    "role": "system",
-                    "content": f"Create a concise summary (maximum {max_length} characters) that captures the key information in this text. Focus on the main concepts, definitions, or procedures.",
-                },
-                {"role": "user", "content": content},
-            ],
-            max_tokens=100,  # Limit token usage
-            temperature=0.3,  # Lower temperature for more focused summaries
-        )
-
-        summary = response.choices[0].message.content.strip()
-
-        # Ensure the summary isn't too long
-        if len(summary) > max_length:
-            summary = summary[: max_length - 3] + "..."
-
-        logger.debug(f"Generated summary: {summary}")
-
-        # Cache the summary
-        cache_summary(content, summary)
-
-        return summary
-    except Exception as e:
-        logger.error(f"Error generating summary: {e}")
-        # If summarization fails, return a truncated version of the original content
-        return (
-            content[: max_length - 3] + "..." if len(content) > max_length else content
-        )
-
-
-def rebuild_summary_cache():
+async def rebuild_summary_cache():
     """
     Rebuild the summary cache for all documents in the vector store.
     This is useful when you want to regenerate all summaries or when
@@ -1800,36 +1808,33 @@ def rebuild_summary_cache():
             global summary_cache
             summary_cache = {}
 
-            # Generate summaries in batch
-            logger.info(f"[SUMMARY] Generating summaries for {len(contents)} documents")
-            batch_size = 20  # Larger batch size for bulk processing
-            summaries = batch_generate_summaries(contents, batch_size=batch_size)
+            # Generate summaries in batches asynchronously
+            batch_size = 20  # Process 20 at a time
+            summaries = await batch_generate_summaries(
+                contents, max_length=100, batch_size=batch_size
+            )
 
-            # Update document metadata with new summaries
-            updated_docs = []
-            for i, doc_idx in enumerate(doc_ids):
-                if i < len(summaries) and summaries[i]:
-                    doc = all_docs[doc_idx]
-                    if hasattr(doc, "metadata"):
-                        doc.metadata["summary"] = summaries[i]
-                        updated_docs.append(doc)
+            # Update documents with summaries
+            for i, summary in enumerate(summaries):
+                if summary and i < len(doc_ids):
+                    doc_id = doc_ids[i]
+                    if doc_id < len(all_docs):
+                        doc = all_docs[doc_id]
+                        if hasattr(doc, "metadata"):
+                            doc.metadata["summary"] = summary
 
-            # Rebuild vector store with updated documents if needed
-            if updated_docs:
-                logger.info(
-                    f"[SUMMARY] Updated summaries for {len(updated_docs)} documents"
-                )
+            # Save the cache
+            save_summary_cache()
 
-                # Save the summary cache
-                save_summary_cache()
+            logger.info(
+                f"[SUMMARY] Rebuilt summary cache with {len(summary_cache)} entries"
+            )
+            return True
 
-                return True
-            else:
-                logger.warning("[SUMMARY] No documents were updated with summaries")
-                return False
         else:
-            logger.error("[SUMMARY] Could not access documents in vector store")
+            logger.error("[SUMMARY] Vector store does not have expected structure")
             return False
+
     except Exception as e:
         logger.error(f"[SUMMARY] Error rebuilding summary cache: {e}")
         return False

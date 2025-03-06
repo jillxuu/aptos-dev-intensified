@@ -14,6 +14,10 @@ from langchain_community.vectorstores import FAISS
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import TextLoader, DirectoryLoader
 from app.rag_providers import RAGProvider, RAGProviderRegistry
+from app.models import (
+    generate_chunk_summary,
+    batch_generate_summaries,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -197,54 +201,82 @@ class GitHubRAGProvider(RAGProvider):
 
         # Process files
         chunks = []
+        file_processing_tasks = []
+
+        # Create a semaphore to limit concurrent file processing
+        semaphore = asyncio.Semaphore(10)  # Process up to 10 files concurrently
+
+        async def process_file(file_path):
+            async with semaphore:
+                try:
+                    # Get relative path for source tracking
+                    rel_path = os.path.relpath(file_path, self._repo_dir)
+
+                    # Skip files that are too large
+                    file_size = os.path.getsize(file_path)
+                    if file_size > 1_000_000:  # Skip files larger than 1MB
+                        logger.warning(
+                            f"Skipping large file: {rel_path} ({file_size} bytes)"
+                        )
+                        return []
+
+                    # Read file content
+                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+
+                    # Skip empty files
+                    if not content.strip():
+                        return []
+
+                    # Create text splitter based on file type
+                    if file_path.endswith((".md", ".txt")):
+                        text_splitter = RecursiveCharacterTextSplitter(
+                            chunk_size=1000,
+                            chunk_overlap=200,
+                        )
+                    else:
+                        text_splitter = RecursiveCharacterTextSplitter(
+                            chunk_size=1000,
+                            chunk_overlap=200,
+                            separators=["\n\n", "\n", " ", ""],
+                        )
+
+                    # Split text into chunks
+                    file_chunks = text_splitter.create_documents(
+                        [content], metadatas=[{"source": rel_path}]
+                    )
+
+                    return file_chunks
+
+                except Exception as e:
+                    logger.warning(f"Error processing file {file_path}: {str(e)}")
+                    return []
+
+        # Create tasks for processing each file
         for file_path in all_files:
-            try:
-                # Get relative path for source tracking
-                rel_path = os.path.relpath(file_path, self._repo_dir)
+            file_processing_tasks.append(process_file(file_path))
 
-                # Skip files that are too large
-                file_size = os.path.getsize(file_path)
-                if file_size > 1_000_000:  # Skip files larger than 1MB
-                    logger.warning(
-                        f"Skipping large file: {rel_path} ({file_size} bytes)"
-                    )
-                    continue
+        # Process files concurrently
+        file_chunks_results = await asyncio.gather(*file_processing_tasks)
 
-                # Read file content
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    content = f.read()
-
-                # Skip empty files
-                if not content.strip():
-                    continue
-
-                # Create text splitter based on file type
-                if file_path.endswith((".md", ".txt")):
-                    text_splitter = RecursiveCharacterTextSplitter(
-                        chunk_size=1000,
-                        chunk_overlap=200,
-                    )
-                else:
-                    text_splitter = RecursiveCharacterTextSplitter(
-                        chunk_size=1000,
-                        chunk_overlap=200,
-                        separators=["\n\n", "\n", " ", ""],
-                    )
-
-                # Split text into chunks
-                file_chunks = text_splitter.create_documents(
-                    [content], metadatas=[{"source": rel_path}]
-                )
-
-                chunks.extend(file_chunks)
-
-            except Exception as e:
-                logger.warning(f"Error processing file {file_path}: {str(e)}")
+        # Combine all chunks
+        for file_chunks in file_chunks_results:
+            chunks.extend(file_chunks)
 
         if not chunks:
             raise ValueError("No processable text found in the repository")
 
         logger.info(f"Created {len(chunks)} chunks from repository files")
+
+        # Generate summaries for chunks asynchronously
+        logger.info("Generating summaries for chunks asynchronously")
+        chunk_contents = [chunk.page_content for chunk in chunks]
+        summaries = await batch_generate_summaries(chunk_contents, batch_size=20)
+
+        # Add summaries to chunk metadata
+        for i, summary in enumerate(summaries):
+            if i < len(chunks) and summary:
+                chunks[i].metadata["summary"] = summary
 
         # Double-check embeddings before creating vector store
         if self._embeddings is None:

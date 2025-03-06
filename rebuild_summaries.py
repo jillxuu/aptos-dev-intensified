@@ -14,6 +14,7 @@ Options:
 import os
 import sys
 import logging
+import asyncio
 from app.models import (
     initialize_models,
     rebuild_summary_cache,
@@ -29,7 +30,7 @@ logging.basicConfig(
 logger = logging.getLogger("rebuild_summaries")
 
 
-def main():
+async def async_main():
     # Check for force flag
     force = False
     if len(sys.argv) > 1 and sys.argv[1] == "--force":
@@ -46,9 +47,9 @@ def main():
         global summary_cache
         summary_cache = {}
 
-    # Rebuild summaries
-    logger.info("Starting summary cache rebuild...")
-    success = rebuild_summary_cache()
+    # Rebuild summaries asynchronously
+    logger.info("Starting asynchronous summary cache rebuild...")
+    success = await rebuild_summary_cache()
 
     if success:
         logger.info("Summary cache rebuild completed successfully")
@@ -56,6 +57,11 @@ def main():
     else:
         logger.error("Summary cache rebuild failed")
         return 1
+
+
+def main():
+    """Run the async main function"""
+    return asyncio.run(async_main())
 
 
 if __name__ == "__main__":

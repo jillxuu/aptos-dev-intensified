@@ -112,7 +112,7 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
   const [chatHistories, setChatHistories] = useState<ChatHistoryItem[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [isStreaming, _setIsStreaming] = useState(false);
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
     null,

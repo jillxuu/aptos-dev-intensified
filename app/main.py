@@ -1,11 +1,15 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes import chat
 from app.models import initialize_models
 import os
+import asyncio
+import logging
 
 # Import the GitHub provider to ensure it's registered
 from app.rag_providers.github_provider import github_provider
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Aptos Dev Assistant API",
@@ -37,10 +41,22 @@ async def health_check():
 app.include_router(chat.router, prefix="/api")
 
 
+async def async_init_models():
+    """Asynchronous initialization of models and RAG providers"""
+    try:
+        # Initialize models - this will also load documents if needed
+        initialize_models()
+        logger.info("Models initialized successfully")
+    except Exception as e:
+        logger.error(f"Error initializing models: {e}")
+
+
 @app.on_event("startup")
 async def startup_event():
-    # Initialize models - this will also load documents if needed
-    initialize_models()
+    # Start the initialization in a background task
+    # This allows the server to start up quickly while initialization happens in the background
+    asyncio.create_task(async_init_models())
+    logger.info("Started model initialization in background task")
 
 
 if __name__ == "__main__":
