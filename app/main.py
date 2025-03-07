@@ -1,13 +1,13 @@
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes import chat
 from app.models import initialize_models
+
+# Import RAG providers to ensure they're registered
+from app.rag_providers import aptos_provider, github_provider, custom_provider
 import os
 import asyncio
 import logging
-
-# Import the GitHub provider to ensure it's registered
-from app.rag_providers.github_provider import github_provider
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,17 @@ async def async_init_models():
         # Initialize models - this will also load documents if needed
         initialize_models()
         logger.info("Models initialized successfully")
+
+        # Initialize the default RAG provider (Aptos)
+        from app.rag_providers import RAGProviderRegistry
+
+        default_provider = RAGProviderRegistry.get_provider("aptos")
+        await default_provider.initialize({})
+        logger.info(
+            f"Default RAG provider '{default_provider.name}' initialized successfully"
+        )
     except Exception as e:
-        logger.error(f"Error initializing models: {e}")
+        logger.error(f"Error initializing models or RAG providers: {e}")
 
 
 @app.on_event("startup")

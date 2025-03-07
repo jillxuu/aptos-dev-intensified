@@ -217,8 +217,16 @@ async def generate_ai_response(
             rag_provider = RAGProviderRegistry.get_provider(rag_provider_name)
             logger.info(f"[RAG] Using provider: {rag_provider.name}")
         except ValueError as e:
-            logger.warning(f"[RAG] Provider error: {str(e)}, using default provider")
-            rag_provider = RAGProviderRegistry.get_provider()
+            logger.warning(f"[RAG] Provider error: {str(e)}")
+            try:
+                # Try to get the default provider
+                rag_provider = RAGProviderRegistry.get_provider()
+                logger.info(f"[RAG] Using default provider: {rag_provider.name}")
+            except ValueError as e:
+                # No default provider registered, handle gracefully
+                logger.error(f"Error generating AI response: {str(e)}")
+                yield "I apologize, but I'm currently operating without access to the documentation. My responses may be limited. Please try again later or contact support."
+                return
 
         # Get relevant context from documentation
         logger.info("[RAG] Retrieving relevant context...")
@@ -404,8 +412,17 @@ async def new_chat_stream(request: ChatRequest, request_obj: Request):
             client_id=request.client_id,
         )
 
+        # Add a placeholder for the assistant's response
+        assistant_message = ChatMessage(
+            id=str(uuid.uuid4()),
+            role="assistant",
+            content="",  # Empty content as placeholder
+            timestamp=datetime.now().isoformat(),
+        )
+        chat_history.messages.append(assistant_message)
+
         # Save the chat history
-        await firestore_chat.save_chat_history(chat_history)
+        await firestore_chat.create_chat_history(chat_history)
 
         # Generate the response
         return StreamingResponse(
@@ -492,8 +509,17 @@ async def add_chat_message_stream(
         # Add the message to the chat history
         chat_history.messages.append(new_message)
 
+        # Add a placeholder for the assistant's response
+        assistant_message = ChatMessage(
+            id=str(uuid.uuid4()),
+            role="assistant",
+            content="",  # Empty content as placeholder
+            timestamp=datetime.now().isoformat(),
+        )
+        chat_history.messages.append(assistant_message)
+
         # Save the updated chat history
-        await firestore_chat.save_chat_history(chat_history)
+        await firestore_chat.update_chat_history(chat_history)
 
         # Generate the response
         return StreamingResponse(
