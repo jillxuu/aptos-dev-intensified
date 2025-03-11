@@ -119,8 +119,12 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
   );
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [feedbackText, setFeedbackText] = useState("");
+  // Track the source of chatId changes to determine when to load history
+  const [chatIdSource, setChatIdSource] = useState<
+    "initial" | "selection" | "stream"
+  >("initial");
 
-  // Initialize client ID
+  // Initialize client ID and check URL for chat ID
   useEffect(() => {
     const storedClientId = localStorage.getItem("clientId");
     if (storedClientId) {
@@ -129,6 +133,16 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
       const newClientId = uuidv4();
       localStorage.setItem("clientId", newClientId);
       clientIdRef.current = newClientId;
+    }
+
+    // Check URL for chat ID
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlChatId = urlParams.get("chat");
+    if (urlChatId) {
+      console.log(`Found chat ID in URL: ${urlChatId}`);
+      // Set source to 'selection' for URL-based chat loading
+      setChatIdSource("selection");
+      setChatId(urlChatId);
     }
   }, []);
 
@@ -169,12 +183,38 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
   const loadChatHistories = async () => {
     try {
       setIsLoading(true);
+      console.log("Loading chat histories");
+
       const response = await makeApiRequest(
         `${config.apiBaseUrl}/chat/histories?client_id=${clientIdRef.current}`,
         "GET",
       );
-      if (response) {
-        setChatHistories(response.data.histories);
+
+      if (response && response.data && response.data.histories) {
+        console.log(
+          `Received ${response.data.histories.length} chat histories`,
+        );
+
+        // Ensure no duplicates in the histories
+        const uniqueHistories = [];
+        const seenIds = new Set();
+
+        for (const history of response.data.histories) {
+          if (!seenIds.has(history.id)) {
+            seenIds.add(history.id);
+            uniqueHistories.push(history);
+          }
+        }
+
+        if (uniqueHistories.length !== response.data.histories.length) {
+          console.warn(
+            `Removed ${response.data.histories.length - uniqueHistories.length} duplicate histories`,
+          );
+        }
+
+        setChatHistories(uniqueHistories);
+      } else {
+        console.warn("No chat histories received or invalid response format");
       }
     } catch (err) {
       console.error("Error loading chat histories:", err);
@@ -184,22 +224,37 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
     }
   };
 
-  // Load chat history when chatId is available
+  // Load chat history when chatId is available and it's not from streaming
   useEffect(() => {
-    if (chatId) {
+    if (chatId && chatIdSource !== "stream") {
+      console.log(
+        `Loading chat history for chatId: ${chatId}, source: ${chatIdSource}`,
+      );
       loadChatHistory();
+    } else {
+      console.log(
+        `Skipping chat history load for chatId: ${chatId}, source: ${chatIdSource}`,
+      );
     }
-  }, [chatId]);
+  }, [chatId, chatIdSource]);
 
   const loadChatHistory = async () => {
     try {
       setIsLoading(true);
+      console.log(`Fetching messages for chat: ${chatId}`);
+
       const response = await makeApiRequest(
         `${config.apiBaseUrl}/chat/${chatId}/messages`,
         "GET",
       );
-      if (response) {
+
+      if (response && response.data && response.data.messages) {
+        console.log(
+          `Received ${response.data.messages.length} messages for chat: ${chatId}`,
+        );
         setMessages(response.data.messages);
+      } else {
+        console.warn(`No messages received for chat: ${chatId}`);
       }
 
       // Add a small delay to ensure messages are rendered before scrolling
@@ -207,7 +262,7 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
         scrollToLastResponse();
       }, 100);
     } catch (err) {
-      console.error("Error loading chat history:", err);
+      console.error(`Error loading chat history for ${chatId}:`, err);
       toast.error("Failed to load chat history");
     } finally {
       setIsLoading(false);
@@ -310,6 +365,7 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
     const decoder = new TextDecoder();
     let responseText = "";
     let responseId = uuidv4();
+    console.log(`Starting stream with response ID: ${responseId}`);
 
     // Add the assistant message to the UI immediately
     setMessages((prevMessages) => [
@@ -353,6 +409,8 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
         }
       }
 
+      console.log("Stream completed, updating chat history");
+
       // Get the chat history to update the URL and sidebar
       try {
         const historyResponse = await makeApiRequest(
@@ -360,19 +418,51 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
           "GET",
         );
 
-        if (historyResponse) {
-          // Update the chat ID and title
-          setChatId(historyResponse.data.id);
-
-          // Update the URL with the new chat ID
-          window.history.replaceState(
-            null,
-            "",
-            `?chat=${historyResponse.data.id}`,
+        if (historyResponse && historyResponse.data) {
+          const newChatId = historyResponse.data.id;
+          console.log(
+            `Received latest chat ID: ${newChatId}, current chatId: ${chatId}`,
           );
 
-          // Add this chat to the histories list
-          setChatHistories((prev) => [historyResponse.data, ...prev]);
+          // Only update if the chat ID is different or we don't have one yet
+          if (!chatId || chatId !== newChatId) {
+            console.log(`Setting new chat ID: ${newChatId}`);
+            // Set the source before updating chatId
+            setChatIdSource("stream");
+
+            // Update the chat ID
+            setChatId(newChatId);
+
+            // Update the URL with the new chat ID
+            window.history.replaceState(null, "", `?chat=${newChatId}`);
+          } else {
+            console.log(`Chat ID unchanged: ${chatId}`);
+          }
+
+          // Add this chat to the histories list, but prevent duplicates
+          setChatHistories((prev) => {
+            // Check if this chat already exists in the list
+            const chatExists = prev.some(
+              (chat) => chat.id === historyResponse.data.id,
+            );
+
+            if (chatExists) {
+              console.log(
+                `Chat ${historyResponse.data.id} already exists in history, moving to top`,
+              );
+              // If it exists, move it to the top (most recent)
+              return [
+                historyResponse.data,
+                ...prev.filter((chat) => chat.id !== historyResponse.data.id),
+              ];
+            } else {
+              console.log(
+                `Adding new chat ${historyResponse.data.id} to history`,
+              );
+              // If it's new, add it to the top
+              return [historyResponse.data, ...prev];
+            }
+          });
         }
       } catch (historyErr) {
         console.error("Error getting chat history:", historyErr);
@@ -455,6 +545,7 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
   );
 
   const startNewChat = () => {
+    setChatIdSource("selection");
     setChatId(null);
     setMessages([
       {
@@ -483,6 +574,7 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
 
       // If the deleted chat was the active one, reset to a new chat
       if (chatId === chatToDelete.id) {
+        setChatIdSource("selection");
         setChatId(null);
         setMessages([
           {
@@ -520,6 +612,12 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
     setFeedbackText("");
   };
 
+  // Update the ChatSidebar onSelectChat handler
+  const handleSelectChat = (id: string) => {
+    setChatIdSource("selection");
+    setChatId(id);
+  };
+
   return (
     <div className={"h-full flex flex-col relative"} data-theme={"lofi"}>
       {/* Chat History Sidebar */}
@@ -528,7 +626,7 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
         chatHistories={chatHistories}
         currentChatId={chatId}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-        onSelectChat={(id) => setChatId(id)}
+        onSelectChat={handleSelectChat}
         onDeleteChat={handleDeleteChat}
         onStartNewChat={startNewChat}
       />

@@ -1,0 +1,173 @@
+"""
+Utility functions for working with topic-based chunks.
+
+This module provides functions for loading enhanced chunks, initializing a vector store,
+and retrieving topic-aware context.
+"""
+
+import os
+import json
+import logging
+from typing import List, Dict, Any, Optional, Tuple
+import numpy as np
+from langchain_core.documents import Document
+from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
+
+logger = logging.getLogger(__name__)
+
+# Configuration
+ENHANCED_CHUNKS_PATH = "data/enhanced_chunks.json"
+SIMILARITY_THRESHOLD = 0.7  # Minimum similarity score to include in results
+MAX_CHUNKS_TO_RETURN = 5  # Maximum number of chunks to return
+
+
+async def load_enhanced_chunks(
+    file_path: str = ENHANCED_CHUNKS_PATH,
+) -> List[Dict[str, Any]]:
+    """
+    Load enhanced chunks from the specified file.
+
+    Args:
+        file_path: Path to the enhanced chunks file
+
+    Returns:
+        List of enhanced chunks
+    """
+    try:
+        if not os.path.exists(file_path):
+            logger.warning(f"Enhanced chunks file not found: {file_path}")
+            return []
+
+        with open(file_path, "r") as f:
+            enhanced_chunks = json.load(f)
+
+        logger.info(f"Loaded {len(enhanced_chunks)} enhanced chunks from {file_path}")
+        return enhanced_chunks
+    except Exception as e:
+        logger.error(f"Error loading enhanced chunks: {e}")
+        return []
+
+
+async def initialize_vector_store(
+    enhanced_chunks: List[Dict[str, Any]],
+) -> Optional[FAISS]:
+    """
+    Initialize a vector store with enhanced chunks.
+
+    Args:
+        enhanced_chunks: List of enhanced chunks
+
+    Returns:
+        Initialized vector store or None if initialization fails
+    """
+    try:
+        if not enhanced_chunks:
+            logger.warning(
+                "No enhanced chunks provided for vector store initialization"
+            )
+            return None
+
+        # Convert enhanced chunks to Documents
+        documents = []
+        for chunk in enhanced_chunks:
+            doc = Document(
+                page_content=chunk["content"],
+                metadata={**chunk["metadata"], "id": chunk["id"]},
+            )
+            documents.append(doc)
+
+        # Initialize vector store
+        embeddings = OpenAIEmbeddings()
+        vector_store = FAISS.from_documents(documents, embeddings)
+
+        logger.info(f"Initialized vector store with {len(documents)} documents")
+        return vector_store
+    except Exception as e:
+        logger.error(f"Error initializing vector store: {e}")
+        return None
+
+
+async def get_topic_aware_context(
+    query: str,
+    vector_store: FAISS,
+    enhanced_chunks: List[Dict[str, Any]],
+    k: int = MAX_CHUNKS_TO_RETURN,
+) -> List[Dict[str, Any]]:
+    """
+    Get topic-aware context for a query.
+
+    Args:
+        query: User query
+        vector_store: Initialized vector store
+        enhanced_chunks: List of enhanced chunks
+        k: Maximum number of chunks to return
+
+    Returns:
+        List of relevant chunks with metadata
+    """
+    try:
+        # Create a mapping of chunk IDs to enhanced chunks for quick lookup
+        chunk_map = {chunk["id"]: chunk for chunk in enhanced_chunks}
+
+        # Get relevant documents from vector store
+        # Use the non-async version of similarity_search_with_score
+        docs_with_scores = vector_store.similarity_search_with_score(query, k=k)
+
+        # Process results
+        results = []
+        for doc, score in docs_with_scores:
+            chunk_id = doc.metadata.get("id")
+            if not chunk_id or chunk_id not in chunk_map:
+                continue
+
+            # Get the enhanced chunk
+            enhanced_chunk = chunk_map[chunk_id]
+
+            # Get related chunks
+            related_ids = enhanced_chunk["metadata"].get("related_topics", [])
+            related_chunks = []
+
+            for related_id in related_ids:
+                if related_id in chunk_map:
+                    related_chunk = chunk_map[related_id]
+                    similarity = (
+                        enhanced_chunk["metadata"]
+                        .get("topic_similarity_scores", {})
+                        .get(related_id, 0)
+                    )
+
+                    if similarity >= SIMILARITY_THRESHOLD:
+                        related_chunks.append(
+                            {
+                                "id": related_id,
+                                "title": related_chunk["metadata"].get("title", ""),
+                                "summary": related_chunk["metadata"].get("summary", ""),
+                                "similarity": similarity,
+                            }
+                        )
+
+            # Sort related chunks by similarity
+            related_chunks.sort(key=lambda x: x["similarity"], reverse=True)
+
+            # Format result
+            result = {
+                "content": doc.page_content,
+                "section": doc.metadata.get("section", ""),
+                "source": doc.metadata.get("source", ""),
+                "summary": doc.metadata.get("summary", ""),
+                "score": float(score),
+                "is_priority": doc.metadata.get("is_priority", False),
+                "related_documents": related_chunks,
+            }
+
+            results.append(result)
+
+        # Sort results by score and priority status
+        results.sort(key=lambda x: (not x["is_priority"], -x["score"]))
+
+        logger.info(f"Retrieved {len(results)} relevant chunks for query")
+        return results
+    except Exception as e:
+        logger.error(f"Error retrieving topic-aware context: {e}")
+        return []

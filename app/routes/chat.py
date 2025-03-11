@@ -35,6 +35,10 @@ logger = logging.getLogger(__name__)
 TEST_MODE = os.getenv("CHAT_TEST_MODE", "false").lower() == "true"
 logger.info(f"Chat test mode: {'enabled' if TEST_MODE else 'disabled'}")
 
+# Set default RAG provider
+DEFAULT_RAG_PROVIDER = os.getenv("DEFAULT_RAG_PROVIDER", "topic")
+logger.info(f"Chat routes using default RAG provider: {DEFAULT_RAG_PROVIDER}")
+
 # Initialize embeddings model
 embeddings_model = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -212,21 +216,30 @@ async def generate_ai_response(
         ]
         is_process_query = any(kw in message.lower() for kw in process_keywords)
 
-        # Get the RAG provider
+        # Get the RAG provider - always default to topic provider if not specified
         try:
-            rag_provider = RAGProviderRegistry.get_provider(rag_provider_name)
+            # Use the specified provider or the default topic provider
+            provider_name = rag_provider_name or DEFAULT_RAG_PROVIDER
+            rag_provider = RAGProviderRegistry.get_provider(provider_name)
             logger.info(f"[RAG] Using provider: {rag_provider.name}")
         except ValueError as e:
-            logger.warning(f"[RAG] Provider error: {str(e)}")
+            logger.warning(
+                f"[RAG] Provider error: {str(e)}, falling back to topic provider"
+            )
             try:
-                # Try to get the default provider
-                rag_provider = RAGProviderRegistry.get_provider()
-                logger.info(f"[RAG] Using default provider: {rag_provider.name}")
+                # Try to get the topic provider explicitly
+                rag_provider = RAGProviderRegistry.get_provider("topic")
+                logger.info(f"[RAG] Using topic provider as fallback")
             except ValueError as e:
-                # No default provider registered, handle gracefully
-                logger.error(f"Error generating AI response: {str(e)}")
-                yield "I apologize, but I'm currently operating without access to the documentation. My responses may be limited. Please try again later or contact support."
-                return
+                # No topic provider registered, try default provider
+                try:
+                    rag_provider = RAGProviderRegistry.get_provider()
+                    logger.info(f"[RAG] Using default provider: {rag_provider.name}")
+                except ValueError as e:
+                    # No default provider registered, handle gracefully
+                    logger.error(f"Error generating AI response: {str(e)}")
+                    yield "I apologize, but I'm currently operating without access to the documentation. My responses may be limited. Please try again later or contact support."
+                    return
 
         # Get relevant context from documentation
         logger.info("[RAG] Retrieving relevant context...")
@@ -382,11 +395,9 @@ def format_source_to_url(source_path: str) -> str:
 async def new_chat_stream(request: ChatRequest, request_obj: Request):
     """Create a new chat and stream the response."""
     try:
-        # Extract the Knowledge provider name from the request headers
-        rag_provider_name = request_obj.headers.get("X-RAG-Provider")
-
-        # Create a new chat ID
+        # Create a new chat history
         chat_id = str(uuid.uuid4())
+        client_id = request.client_id
 
         # Get the user's message
         user_message = next(
@@ -403,13 +414,19 @@ async def new_chat_stream(request: ChatRequest, request_obj: Request):
             else user_message.content
         )
 
+        # Use the topic provider by default unless specified otherwise
+        rag_provider_name = (
+            getattr(request, "rag_provider", None) or DEFAULT_RAG_PROVIDER
+        )
+
         # Create a new chat history
         chat_history = ChatHistory(
             id=chat_id,
             title=chat_title,
             timestamp=datetime.now().isoformat(),
             messages=request.messages,
-            client_id=request.client_id,
+            client_id=client_id,
+            metadata={"rag_provider": rag_provider_name},
         )
 
         # Add a placeholder for the assistant's response
@@ -489,14 +506,26 @@ async def add_chat_message_stream(
 ):
     """Add a message to an existing chat and stream the response."""
     try:
-        # Extract the RAG provider name from the request headers
-        rag_provider_name = request.headers.get("X-RAG-Provider")
-
         # Get the chat history
         chat_history = await firestore_chat.get_chat_history(chat_id)
 
         if not chat_history:
             raise HTTPException(status_code=404, detail=f"Chat {chat_id} not found")
+
+        # Use the topic provider by default unless specified in metadata or headers
+        rag_provider_name = None
+
+        # First check if the chat has a provider in its metadata
+        if chat_history.metadata and "rag_provider" in chat_history.metadata:
+            rag_provider_name = chat_history.metadata["rag_provider"]
+
+        # If not, check the request headers
+        if not rag_provider_name:
+            rag_provider_name = request.headers.get("X-RAG-Provider")
+
+        # If still not set, use the default
+        if not rag_provider_name:
+            rag_provider_name = DEFAULT_RAG_PROVIDER
 
         # Create a new message
         new_message = ChatMessage(
