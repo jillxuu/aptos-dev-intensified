@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
-import axios from "axios";
 import { Toaster, toast } from "react-hot-toast";
 import { FiCpu } from "react-icons/fi";
 import { AnimatePresence } from "framer-motion";
@@ -15,6 +14,8 @@ import { FeedbackModal } from "./index";
 // Import types
 import { Message, ChatHistoryItem, FeedbackCategory } from "./types";
 import { config as defaultConfig } from "../../config";
+// Import API service
+import { apiService } from "../../services";
 
 const FEEDBACK_CATEGORIES: FeedbackCategory[] = [
   {
@@ -146,33 +147,6 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
     }
   }, []);
 
-  // Function to make API requests with RAG provider header
-  const makeApiRequest = async (url: string, method: string, data?: any) => {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    // Add RAG provider header if specified
-    if (config.ragProvider) {
-      headers["X-RAG-Provider"] = config.ragProvider;
-    }
-
-    try {
-      if (method === "GET") {
-        return await axios.get(url, { headers });
-      } else if (method === "POST") {
-        return await axios.post(url, data, { headers });
-      } else if (method === "PUT") {
-        return await axios.put(url, data, { headers });
-      } else if (method === "DELETE") {
-        return await axios.delete(url, { headers });
-      }
-    } catch (error) {
-      console.error(`Error making ${method} request to ${url}:`, error);
-      throw error;
-    }
-  };
-
   // Load chat histories when client ID is available
   useEffect(() => {
     if (clientIdRef.current) {
@@ -185,10 +159,7 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
       setIsLoading(true);
       console.log("Loading chat histories");
 
-      const response = await makeApiRequest(
-        `${config.apiBaseUrl}/chat/histories?client_id=${clientIdRef.current}`,
-        "GET",
-      );
+      const response = await apiService.getChatHistories(clientIdRef.current);
 
       if (response && response.data && response.data.histories) {
         console.log(
@@ -243,18 +214,32 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
       setIsLoading(true);
       console.log(`Fetching messages for chat: ${chatId}`);
 
-      const response = await makeApiRequest(
-        `${config.apiBaseUrl}/chat/${chatId}/messages`,
-        "GET",
-      );
+      // Ensure chatId is not null before making the API call
+      if (!chatId) {
+        console.warn("Cannot load chat history: chatId is null");
+        setIsLoading(false);
+        return;
+      }
 
-      if (response && response.data && response.data.messages) {
-        console.log(
-          `Received ${response.data.messages.length} messages for chat: ${chatId}`,
-        );
-        setMessages(response.data.messages);
+      // Log the API endpoint being called for debugging
+      console.log(`Calling API endpoint: /chat/history/${chatId}`);
+
+      const response = await apiService.getChatMessages(chatId);
+
+      if (response && response.data) {
+        // The response contains the entire chat history object, not just messages
+        const chatHistory = response.data;
+
+        if (chatHistory.messages && Array.isArray(chatHistory.messages)) {
+          console.log(
+            `Received ${chatHistory.messages.length} messages for chat: ${chatId}`,
+          );
+          setMessages(chatHistory.messages);
+        } else {
+          console.warn(`No messages found in chat history for chat: ${chatId}`);
+        }
       } else {
-        console.warn(`No messages received for chat: ${chatId}`);
+        console.warn(`No chat history received for chat: ${chatId}`);
       }
 
       // Add a small delay to ensure messages are rendered before scrolling
@@ -303,13 +288,13 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
       }
 
       // Submit feedback to the API
-      await makeApiRequest(`${config.apiBaseUrl}/feedback`, "POST", {
+      await apiService.submitFeedback({
         message_id: messageId,
         chat_id: chatId,
         rating,
         category,
         feedback_text: feedbackText,
-        usedChunks: responseMessage.usedChunks,
+        usedChunks: responseMessage.metadata?.used_chunks,
         timestamp: new Date().toISOString(),
       });
 
@@ -355,16 +340,42 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const handleStreamResponse = async (response: Response) => {
     if (!response.body) {
       toast.error("Failed to get response stream");
       return;
     }
 
+    // Extract chat_id from response headers
+    const headerChatId = response.headers.get("X-Chat-ID");
+    let extractedChatId = chatId; // Initialize with current chatId
+
+    if (headerChatId) {
+      extractedChatId = headerChatId;
+      console.log(`Extracted chat ID from header: ${extractedChatId}`);
+
+      // If this is a new chat (chatId was null), update the chatId
+      if (!chatId) {
+        console.log(`Setting new chat ID: ${extractedChatId}`);
+        // Set the source before updating chatId
+        setChatIdSource("stream");
+
+        // Update the chat ID
+        setChatId(extractedChatId);
+
+        // Update the URL with the new chat ID
+        window.history.replaceState(null, "", `?chat=${extractedChatId}`);
+      }
+    } else {
+      console.warn("No chat ID found in response headers");
+    }
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let responseText = "";
     let responseId = uuidv4();
+
     console.log(`Starting stream with response ID: ${responseId}`);
 
     // Add the assistant message to the UI immediately
@@ -383,7 +394,7 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
         const { done, value } = await reader.read();
         if (done) break;
 
-        // Decode and append to the response text
+        // Decode the chunk and add to response text
         const chunk = decoder.decode(value, { stream: true });
         responseText += chunk;
 
@@ -411,61 +422,10 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
 
       console.log("Stream completed, updating chat history");
 
-      // Get the chat history to update the URL and sidebar
-      try {
-        const historyResponse = await makeApiRequest(
-          `${config.apiBaseUrl}/chat/latest?client_id=${clientIdRef.current}`,
-          "GET",
-        );
-
-        if (historyResponse && historyResponse.data) {
-          const newChatId = historyResponse.data.id;
-          console.log(
-            `Received latest chat ID: ${newChatId}, current chatId: ${chatId}`,
-          );
-
-          // Only update if the chat ID is different or we don't have one yet
-          if (!chatId || chatId !== newChatId) {
-            console.log(`Setting new chat ID: ${newChatId}`);
-            // Set the source before updating chatId
-            setChatIdSource("stream");
-
-            // Update the chat ID
-            setChatId(newChatId);
-
-            // Update the URL with the new chat ID
-            window.history.replaceState(null, "", `?chat=${newChatId}`);
-          } else {
-            console.log(`Chat ID unchanged: ${chatId}`);
-          }
-
-          // Add this chat to the histories list, but prevent duplicates
-          setChatHistories((prev) => {
-            // Check if this chat already exists in the list
-            const chatExists = prev.some(
-              (chat) => chat.id === historyResponse.data.id,
-            );
-
-            if (chatExists) {
-              console.log(
-                `Chat ${historyResponse.data.id} already exists in history, moving to top`,
-              );
-              // If it exists, move it to the top (most recent)
-              return [
-                historyResponse.data,
-                ...prev.filter((chat) => chat.id !== historyResponse.data.id),
-              ];
-            } else {
-              console.log(
-                `Adding new chat ${historyResponse.data.id} to history`,
-              );
-              // If it's new, add it to the top
-              return [historyResponse.data, ...prev];
-            }
-          });
-        }
-      } catch (historyErr) {
-        console.error("Error getting chat history:", historyErr);
+      // No need to get the chat history since we already have the chat ID
+      if (extractedChatId) {
+        // Add this chat to the histories list, but prevent duplicates
+        loadChatHistories();
       }
     } catch (err) {
       console.error("Error reading stream:", err);
@@ -473,7 +433,7 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
     }
   };
 
-  const handleSubmitMessage = useCallback(
+  const handleSendMessage = useCallback(
     async (message: string) => {
       if (!message.trim() || !clientIdRef.current) return;
 
@@ -489,49 +449,32 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
       setIsLoading(true);
 
       try {
-        let response;
-        if (!chatId) {
-          // For new chats, we send the user message to create a new chat
-          response = await fetch(`${config.apiBaseUrl}/chat/new/stream`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              messages: [userMessage],
-              client_id: clientIdRef.current,
-            }),
-          });
-        } else {
-          // For existing chats, we send the user message to add to the existing chat
-          // The backend will handle adding the message to the chat history
-          response = await fetch(
-            `${config.apiBaseUrl}/chat/${chatId}/message/stream`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                ...userMessage,
-                client_id: clientIdRef.current,
-                chat_id: chatId, // Explicitly include the chat_id to ensure it's used
-              }),
-            },
-          );
+        // Use the unified endpoint for both new chats and adding messages to existing chats
+        const requestBody: any = {
+          content: message,
+          client_id: clientIdRef.current,
+          role: "user",
+          message_id: userMessage.id,
+          temperature: 0.7,
+        };
+
+        // If we have a chat ID, include it to add to an existing chat
+        if (chatId) {
+          requestBody.chat_id = chatId;
         }
 
+        console.log(
+          `Sending message to unified endpoint, chat_id: ${chatId || "new"}`,
+        );
+
+        // Use the API service for streaming
+        const response = await apiService.sendMessageStream(requestBody);
+
         if (!response.ok) {
-          throw new Error("Failed to get response from the assistant");
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
 
         await handleStreamResponse(response);
-
-        toast.success("Response received!", {
-          icon: "🤖",
-          duration: 2000,
-        });
-        setTimeout(scrollToLastResponse, 100);
       } catch (err) {
         toast.error("Failed to get response from the assistant");
         console.error("Chat error:", err);
@@ -541,7 +484,7 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
         setIsLoading(false);
       }
     },
-    [chatId, config.apiBaseUrl],
+    [chatId, handleStreamResponse],
   );
 
   const startNewChat = () => {
@@ -562,10 +505,7 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
     e.stopPropagation();
 
     try {
-      await makeApiRequest(
-        `${config.apiBaseUrl}/chat/history/${chatToDelete.id}`,
-        "DELETE",
-      );
+      await apiService.deleteChatHistory(chatToDelete.id);
 
       // Remove from the list
       setChatHistories((prev) =>
@@ -685,7 +625,7 @@ const Chat: React.FC<ChatProps> = ({ config = defaultConfig }) => {
             width: isSidebarOpen ? "calc(100% - 16rem)" : "100%",
           }}
         >
-          <ChatInput isLoading={isLoading} onSubmit={handleSubmitMessage} />
+          <ChatInput isLoading={isLoading} onSubmit={handleSendMessage} />
         </div>
       </div>
 

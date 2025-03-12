@@ -1,25 +1,23 @@
-import React from "react";
+import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion } from "framer-motion";
-import { FiThumbsUp, FiThumbsDown, FiCopy, FiCheck } from "react-icons/fi";
+import {
+  FiThumbsUp,
+  FiThumbsDown,
+  FiCopy,
+  FiCheck,
+  FiInfo,
+  FiX,
+} from "react-icons/fi";
 import rainbowPet from "../../assets/rainbow-pet-small.png";
 import robotIcon from "../../assets/robot-small.png";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { Message } from "./types";
 
 interface MessageProps {
-  message: {
-    id?: string;
-    role: "user" | "assistant";
-    content: string;
-    sources?: string[];
-    feedback?: {
-      rating?: boolean;
-      feedbackText?: string;
-      category?: string;
-    };
-  };
+  message: Message;
   isLastMessage: boolean;
   isStreaming: boolean;
   copiedMessageId: string | null;
@@ -39,6 +37,16 @@ const ChatMessage: React.FC<MessageProps> = ({
   onCopy,
   forwardedRef,
 }) => {
+  const [showMetadata, setShowMetadata] = useState(false);
+
+  // Format metadata for display
+  const formatMetadata = (metadata: any) => {
+    if (!metadata) return "No metadata available";
+
+    // Format the metadata as JSON with indentation for readability
+    return JSON.stringify(metadata, null, 2);
+  };
+
   return (
     <motion.div
       ref={forwardedRef}
@@ -80,7 +88,7 @@ const ChatMessage: React.FC<MessageProps> = ({
               ),
               li: (props) => <li {...props} className="mb-1" />,
               code: (props: any) => {
-                const { children, className, node, ...rest } = props;
+                const { children, className, ...rest } = props;
                 const match = /language-(\w+)/.exec(className || "");
                 const language = match ? match[1] : "";
                 const inline = !className;
@@ -118,6 +126,23 @@ const ChatMessage: React.FC<MessageProps> = ({
             <span className="inline-block animate-pulse">▊</span>
           )}
         </div>
+
+        {/* Metadata display */}
+        {showMetadata && message.metadata && (
+          <div className="mt-2 p-3 bg-base-200 rounded-lg relative">
+            <button
+              className="absolute top-2 right-2 btn btn-xs btn-circle"
+              onClick={() => setShowMetadata(false)}
+            >
+              <FiX />
+            </button>
+            <h4 className="text-sm font-semibold mb-2">Message Metadata</h4>
+            <pre className="text-xs overflow-x-auto whitespace-pre-wrap">
+              {formatMetadata(message.metadata)}
+            </pre>
+          </div>
+        )}
+
         {message.role === "assistant" && message.id && (
           <div className="flex items-center gap-2 mt-2">
             <button
@@ -149,6 +174,15 @@ const ChatMessage: React.FC<MessageProps> = ({
                 <FiCopy />
               )}
             </button>
+            {message.metadata && (
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => setShowMetadata(!showMetadata)}
+                title={showMetadata ? "Hide metadata" : "View metadata"}
+              >
+                <FiInfo className={showMetadata ? "text-primary" : ""} />
+              </button>
+            )}
           </div>
         )}
       </div>

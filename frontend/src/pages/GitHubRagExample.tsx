@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { AptosChatbotPlugin } from "../components/plugin";
-import axios from "axios";
-import { config } from "../config";
+import { apiService } from "../services";
 
 // Default repository for the example - using a smaller repo
 const DEFAULT_REPO = "https://github.com/aptos-labs/aptos-ts-sdk";
@@ -28,13 +27,10 @@ const GitHubRagExample = () => {
   useEffect(() => {
     const initializeDirectExample = async () => {
       try {
-        await axios.post(
-          `${config.apiBaseUrl}/rag/provider/github/initialize`,
-          {
-            repo_url: directExampleRepo,
-            branch: directExampleBranch,
-          },
-        );
+        await apiService.initializeGitHubRepo({
+          repo_url: directExampleRepo,
+          branch: directExampleBranch,
+        });
         setDirectExampleInitialized(true);
       } catch (err: any) {
         console.error("Error initializing direct example repository:", err);
@@ -59,7 +55,7 @@ const GitHubRagExample = () => {
     setSuccess(null);
 
     try {
-      await axios.post(`${config.apiBaseUrl}/rag/provider/github/initialize`, {
+      await apiService.initializeGitHubRepo({
         repo_url: repoUrl,
         branch: branch,
       });

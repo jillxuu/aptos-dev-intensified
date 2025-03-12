@@ -5,8 +5,11 @@ import asyncio
 import sys
 from typing import Dict, Any, List, Optional
 
-from fastapi import FastAPI, Request, Response, Depends, HTTPException
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+from fastapi.openapi.utils import get_openapi
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.routes import chat
@@ -34,8 +37,30 @@ logger.info(f"Default RAG provider set to: {default_provider}")
 
 app = FastAPI(
     title="Aptos Dev Assistant API",
-    description="API for the Aptos Developer Assistant chatbot",
+    description="""
+    # Aptos Developer Assistant API
+    
+    This API provides access to the Aptos Developer Assistant chatbot, which uses Retrieval-Augmented Generation (RAG) 
+    to provide accurate and contextual responses about Aptos development.
+    
+    ## Features
+    
+    - **RAG Implementation**: Uses vector search and topic-based enhancement for improved context retrieval
+    - **Multiple RAG Providers**: Support for different knowledge sources (Aptos docs, GitHub repos, etc.)
+    - **Streaming Responses**: Real-time streaming of AI-generated responses
+    - **Chat History Management**: Create, retrieve, and manage chat conversations
+    
+    ## Authentication
+    
+    Currently, the API does not require authentication. This may change in future versions.
+    
+    ## Rate Limiting
+    
+    Please be respectful of API usage. Excessive requests may be rate-limited in the future.
+    """,
     version="1.0.0",
+    docs_url=None,  # Disable the default docs
+    redoc_url=None,  # Disable the default redoc
 )
 
 # Configure CORS to allow all origins
@@ -48,15 +73,100 @@ app.add_middleware(
 )
 
 
+# Custom OpenAPI schema
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+
+    # Add custom examples and descriptions
+    for path in openapi_schema["paths"]:
+        for method in openapi_schema["paths"][path]:
+            if path == "/api/message/stream" and method == "post":
+                openapi_schema["paths"][path][method][
+                    "description"
+                ] = """
+                Unified endpoint for creating a new chat or adding a message to an existing chat.
+                
+                If chat_id is provided, the message will be added to that chat.
+                If chat_id is not provided, a new chat will be created.
+                """
+                # Add example request body
+                if "requestBody" in openapi_schema["paths"][path][method]:
+                    openapi_schema["paths"][path][method]["requestBody"]["content"][
+                        "application/json"
+                    ]["example"] = {
+                        "content": "What is Move language?",
+                        "client_id": "user123",
+                        "role": "user",
+                        "id": "msg123",
+                        "temperature": 0.7,
+                        "rag_provider": "topic",
+                    }
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
+
+
+# Custom documentation endpoints
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=f"{app.title} - Swagger UI",
+        oauth2_redirect_url=app.swagger_ui_oauth2_redirect_url,
+        swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js",
+        swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",
+    )
+
+
+@app.get("/redoc", include_in_schema=False)
+async def redoc_html():
+    return get_redoc_html(
+        openapi_url=app.openapi_url,
+        title=f"{app.title} - ReDoc",
+        redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js",
+    )
+
+
+# Create a router for system endpoints
+system_router = APIRouter()
+
+
 # Health check endpoint
-@app.get("/health")
+@system_router.get(
+    "/health",
+    summary="Health Check",
+    description="Check if the API is running properly",
+    response_description="Returns status and timestamp",
+    tags=["System"],
+)
 async def health_check():
     """Health check endpoint."""
     return {"status": "ok", "timestamp": time.time()}
 
 
+# Create a router for RAG endpoints
+rag_router = APIRouter()
+
+
 # API endpoint for getting relevant context
-@app.post("/get_context")
+@rag_router.post(
+    "/rag/context",
+    summary="Get Relevant Context",
+    description="Retrieve relevant context for a given query using the specified RAG provider",
+    response_description="Returns context information relevant to the query",
+    tags=["RAG"],
+)
 async def get_context(request: Request):
     """Get relevant context for a query."""
     try:
@@ -88,7 +198,13 @@ async def get_context(request: Request):
 
 
 # API endpoint for listing available providers
-@app.get("/providers")
+@rag_router.get(
+    "/rag/providers",
+    summary="List RAG Providers",
+    description="List all available RAG providers with their descriptions",
+    response_description="Returns a list of available RAG providers",
+    tags=["RAG"],
+)
 async def list_providers():
     """List all available RAG providers."""
     providers = RAGProviderRegistry.list_providers()
@@ -102,7 +218,9 @@ async def list_providers():
 
 
 # Include routers
-app.include_router(chat.router, prefix="/api")
+app.include_router(system_router, tags=["System"])
+app.include_router(rag_router, prefix="/api", tags=["RAG"])
+app.include_router(chat.router, prefix="/api", tags=["Chat"])
 
 
 # Async initialization of models and providers
@@ -110,7 +228,7 @@ async def async_init_models():
     """Initialize models and providers on startup."""
     try:
         # Initialize models
-        initialize_models()
+        await initialize_models()
         logger.info("Models initialized successfully")
     except Exception as e:
         logger.error(f"Error initializing models: {e}")

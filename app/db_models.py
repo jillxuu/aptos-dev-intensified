@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from firebase_admin import firestore
 from app.firebase_config import db
-from app.models import ChatMessage, ChatHistory, Feedback
+from app.models import ChatHistory, Feedback
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,19 @@ class FirestoreChat:
     def _convert_to_dict(self, obj):
         """Convert Pydantic models to dictionary for Firestore."""
         if hasattr(obj, "dict"):
-            return obj.dict()
+            data = obj.dict()
+            # Ensure all nested objects are properly serialized
+            for key, value in data.items():
+                if isinstance(value, list):
+                    # Handle lists of objects
+                    data[key] = [
+                        self._convert_to_dict(item) if hasattr(item, "dict") else item
+                        for item in value
+                    ]
+                elif hasattr(value, "dict"):
+                    # Handle nested objects
+                    data[key] = self._convert_to_dict(value)
+            return data
         return obj
 
     def _handle_timestamp(self, data: dict) -> dict:

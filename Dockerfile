@@ -18,6 +18,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app/ ./app/
 
+# Create data directory first
+RUN mkdir -p ./data
+
+# Copy data files
+COPY data/enhanced_chunks.json ./data/enhanced_chunks.json
+COPY data/summary_cache.pkl ./data/summary_cache.pkl
+
 # Create necessary directories and clone documentation
 RUN mkdir -p data/faiss && \
     git clone --depth 1 https://github.com/aptos-labs/developer-docs.git data/developer-docs

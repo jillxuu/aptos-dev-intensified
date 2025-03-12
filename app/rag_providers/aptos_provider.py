@@ -23,7 +23,7 @@ class AptosRAGProvider(RAGProvider):
     @property
     def description(self) -> str:
         """Get the description of the RAG provider."""
-        return "Default RAG provider using Aptos documentation"
+        return "RAG provider using Aptos documentation"
 
     async def initialize(self, config: Dict[str, Any]) -> None:
         """

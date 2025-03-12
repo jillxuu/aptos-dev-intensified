@@ -1,6 +1,6 @@
 """Models for the chat application."""
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, Field
 from typing import List, Optional, Dict, Any
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
@@ -195,8 +195,7 @@ class ChatMessage(BaseModel):
     role: str
     content: str
     timestamp: Optional[str] = None
-    sources: Optional[List[str]] = None
-    used_chunks: Optional[List[Dict[str, Any]]] = None
+    metadata: Optional[Dict[str, Any]] = None
 
     @validator("content")
     def content_must_be_valid(cls, v):
@@ -205,6 +204,13 @@ class ChatMessage(BaseModel):
             raise ValueError("content cannot be None")
         if not isinstance(v, str):
             raise ValueError("content must be a string")
+        return v
+
+    @validator("metadata", pre=True)
+    def ensure_metadata(cls, v):
+        """Ensure metadata is a dictionary and initialize it if None."""
+        if v is None:
+            return {}
         return v
 
 
@@ -242,11 +248,15 @@ class ChatResponse(BaseModel):
 class ChatMessageRequest(BaseModel):
     """Request model for adding a new message to an existing chat."""
 
-    role: str
     content: str
-    id: Optional[str] = None
+    message_id: Optional[str] = None
     client_id: Optional[str] = None
     chat_id: Optional[str] = None  # This should match the path parameter
+    role: str = "user"  # Default to "user" if not provided
+    rag_provider: Optional[str] = (
+        None  # If not provided, will use DEFAULT_RAG_PROVIDER from server config
+    )
+    temperature: Optional[float] = 0.7  # Add temperature field for consistency
 
 
 class ChatMessageResponse(BaseModel):
@@ -436,8 +446,7 @@ class ChatMessage(BaseModel):
     role: str
     content: str
     timestamp: Optional[str] = None
-    sources: Optional[List[str]] = None
-    used_chunks: Optional[List[Dict[str, Any]]] = None
+    metadata: Optional[Dict[str, Any]] = None
 
     @validator("content")
     def content_must_be_valid(cls, v):
@@ -446,6 +455,13 @@ class ChatMessage(BaseModel):
             raise ValueError("content cannot be None")
         if not isinstance(v, str):
             raise ValueError("content must be a string")
+        return v
+
+    @validator("metadata", pre=True)
+    def ensure_metadata(cls, v):
+        """Ensure metadata is a dictionary and initialize it if None."""
+        if v is None:
+            return {}
         return v
 
 
@@ -483,11 +499,15 @@ class ChatResponse(BaseModel):
 class ChatMessageRequest(BaseModel):
     """Request model for adding a new message to an existing chat."""
 
-    role: str
     content: str
-    id: Optional[str] = None
+    message_id: Optional[str] = None
     client_id: Optional[str] = None
     chat_id: Optional[str] = None  # This should match the path parameter
+    role: str = "user"  # Default to "user" if not provided
+    rag_provider: Optional[str] = (
+        None  # If not provided, will use DEFAULT_RAG_PROVIDER from server config
+    )
+    temperature: Optional[float] = 0.7  # Add temperature field for consistency
 
 
 class ChatMessageResponse(BaseModel):
@@ -820,21 +840,26 @@ async def generate_chunk_summary(content: str, max_length: int = 100) -> str:
         return cached_summary
 
     try:
-        # Use OpenAI to generate a summary
-        response = await openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",  # Using a smaller model for efficiency
-            messages=[
-                {
-                    "role": "system",
-                    "content": f"Create a concise summary (maximum {max_length} characters) that captures the key information in this text. Focus on the main concepts, definitions, or procedures.",
-                },
-                {"role": "user", "content": content},
-            ],
-            max_tokens=100,  # Limit token usage
-            temperature=0.3,  # Lower temperature for more focused summaries
-        )
+        # For OpenAI client that doesn't support async natively, we'll use a synchronous call
+        # but wrap it in a way that doesn't block the event loop
+        def sync_generate_summary():
+            response = openai_client.chat.completions.create(
+                model="gpt-3.5-turbo",  # Using a smaller model for efficiency
+                messages=[
+                    {
+                        "role": "system",
+                        "content": f"Create a concise summary (maximum {max_length} characters) that captures the key information in this text. Focus on the main concepts, definitions, or procedures.",
+                    },
+                    {"role": "user", "content": content},
+                ],
+                max_tokens=100,  # Limit token usage
+                temperature=0.3,  # Lower temperature for more focused summaries
+            )
+            return response.choices[0].message.content.strip()
 
-        summary = response.choices[0].message.content.strip()
+        # Run the synchronous function in a thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        summary = await loop.run_in_executor(None, sync_generate_summary)
 
         # Ensure the summary isn't too long
         if len(summary) > max_length:
@@ -854,7 +879,7 @@ async def generate_chunk_summary(content: str, max_length: int = 100) -> str:
         )
 
 
-def initialize_models():
+async def initialize_models():
     """Initialize the RAG components."""
     global embeddings, vector_store, bm25_index
 
@@ -952,7 +977,7 @@ def initialize_models():
             )
 
             # Load documentation and save state
-            load_aptos_docs(docs_dir)
+            await load_aptos_docs(docs_dir)
             save_vector_store_state(
                 {"last_processed": datetime.now().isoformat(), "docs_processed": True}
             )
@@ -1428,7 +1453,7 @@ def extract_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
     return {}, content
 
 
-def process_markdown_document(content: str) -> List[str]:
+async def process_markdown_document(content: str) -> List[str]:
     """Process markdown/MDX content and split it into sections based on headers."""
     # Extract frontmatter if present
     metadata, clean_content = extract_frontmatter(content)
@@ -1502,9 +1527,10 @@ def process_markdown_document(content: str) -> List[str]:
                 if chunk and isinstance(chunk, str) and chunk.strip()
             ]
 
-            # Generate summaries in batch
+            # Generate summaries in batch - use async approach
             if chunk_contents:
-                summaries = batch_generate_summaries(chunk_contents)
+                # Properly await the async function
+                summaries = await batch_generate_summaries(chunk_contents)
 
                 # Create Document objects with summaries
                 valid_splits = []
@@ -1560,9 +1586,10 @@ def process_markdown_document(content: str) -> List[str]:
                         }
                     )
 
-        # Generate summaries in batch
+        # Generate summaries in batch - use async approach
         if contents_to_summarize:
-            summaries = batch_generate_summaries(contents_to_summarize)
+            # Properly await the async function
+            summaries = await batch_generate_summaries(contents_to_summarize)
 
             # Second pass: create Document objects with summaries
             for i, content in enumerate(contents_to_summarize):
@@ -1595,9 +1622,10 @@ def process_markdown_document(content: str) -> List[str]:
             if chunk and isinstance(chunk, str) and chunk.strip()
         ]
 
-        # Generate summaries in batch
+        # Generate summaries in batch - use async approach
         if chunk_contents:
-            summaries = batch_generate_summaries(chunk_contents)
+            # Properly await the async function
+            summaries = await batch_generate_summaries(chunk_contents)
 
             # Create Document objects with summaries
             valid_splits = []
@@ -1760,7 +1788,9 @@ def analyze_document_relationships(docs_dir: str) -> Dict[str, Dict]:
     return document_map
 
 
-def load_aptos_docs(docs_dir: str = "data/developer-docs/apps/nextra/pages/en") -> None:
+async def load_aptos_docs(
+    docs_dir: str = "data/developer-docs/apps/nextra/pages/en",
+) -> None:
     """Load and process Aptos documentation from the English documentation directory."""
     global vector_store
 
@@ -1803,8 +1833,8 @@ def load_aptos_docs(docs_dir: str = "data/developer-docs/apps/nextra/pages/en") 
                         # Get document relationship info
                         doc_info = document_map.get(relative_path, {})
 
-                        # Process the document
-                        doc_sections = process_markdown_document(content)
+                        # Process the document - properly await the async function with single parameter
+                        doc_sections = await process_markdown_document(content)
                         processed_count += 1
 
                         # Add each section to documents with metadata
@@ -2089,9 +2119,52 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1 and sys.argv[1] == "rebuild_summaries":
         logger.info("Starting summary cache rebuild from command line")
-        initialize_models()
-        success = rebuild_summary_cache()
-        if success:
-            logger.info("Summary cache rebuild completed successfully")
-        else:
-            logger.error("Summary cache rebuild failed")
+
+        # Create an event loop to run the async functions
+        async def main():
+            await initialize_models()
+            success = await rebuild_summary_cache()
+            if success:
+                logger.info("Summary cache rebuild completed successfully")
+            else:
+                logger.error("Summary cache rebuild failed")
+
+        # Run the async main function
+        asyncio.run(main())
+
+
+class UnifiedChatRequest(BaseModel):
+    """
+    Unified request model that can handle both creating new chats and adding messages to existing chats.
+    If chat_id is provided, it adds a message to an existing chat.
+    If chat_id is not provided, it creates a new chat.
+    """
+
+    # Fields for both new chats and message additions
+    content: str = Field(..., description="The message content (required)")
+    client_id: str = Field(
+        ..., description="Unique identifier for the client (required)"
+    )
+
+    # Fields for new chats
+    messages: Optional[List[ChatMessage]] = Field(
+        None, description="Full message history for new chats (optional)"
+    )
+    temperature: float = Field(
+        0.7, description="Temperature for LLM generation (0.0 to 1.0, defaults to 0.7)"
+    )
+
+    # Fields for both
+    chat_id: Optional[str] = Field(
+        None, description="Chat ID to add message to (creates new chat if not provided)"
+    )
+    rag_provider: Optional[str] = Field(
+        None, description="RAG provider to use (uses server default if not provided)"
+    )
+
+    # Optional fields
+    role: str = Field("user", description="Message role (defaults to 'user')")
+    message_id: Optional[str] = Field(
+        None,
+        description="Unique identifier for the message (generated if not provided)",
+    )
