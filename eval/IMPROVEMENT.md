@@ -1,0 +1,22 @@
+# Potential Improvements for Aptos Developer RAG System
+
+- Tune the similarity threshold (try increasing from 0.2 to 0.3-0.4)
+- Enhance keyword extraction by adding more Aptos-specific technical terms to priority vocabulary
+- Expand the priority topics list with more Aptos technical concepts
+- Add metadata tagging to explicitly mark content by SDK type (TypeScript, Python, Rust)
+- Update chunking strategy to preserve code block integrity with their explanations
+- Implement query expansion specifically for Aptos-related technical terms
+- Try newer embedding models like OpenAI's `text-embedding-3-small` or `text-embedding-3-large`
+- Adjust the MAX_CHUNKS_TO_RETURN value (try more than 5 for complex queries)
+- Implement dynamic k values based on query complexity
+- Add post-retrieval re-ranking using a more sophisticated relevance model
+- Enhance citation mechanism to clearly mark sources in responses
+- Add confidence scoring to indicate when system is uncertain about source citations
+- Implement SDK-specific intent detection in the query processing
+- Try embedding-based similarity instead of just keyword overlap
+- Add hierarchical chunking (both specific and contextual chunks)
+- Improve preprocessing to identify code blocks and keep them intact
+- Add verification step to check if response actually aligns with retrieved sources
+- Experiment with domain-specific embedding models for blockchain/Aptos content
+- Add query classification to determine if question is about specific SDK or feature
+- Use weighted retrieval to prioritize official documentation over community content
