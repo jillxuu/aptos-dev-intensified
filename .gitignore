@@ -35,6 +35,10 @@ node_modules/
 # Vector Store
 data/
 
+# Logs
+logs/
+*.log
+
 # IDE
 .idea/
 .vscode/
@@ -42,3 +46,4 @@ data/
 *.swo
 
 .cursorrules
+/.cursor/rules

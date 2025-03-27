@@ -15,10 +15,8 @@ from pydantic import BaseModel
 from app.routes import chat
 from app.models import initialize_models
 from app.rag_providers import RAGProviderRegistry
-from app.rag_providers import aptos_provider, github_provider, custom_provider
-
-# Import topic_provider to ensure it's registered as the default
-from app.rag_providers.topic_provider import topic_provider
+from app.rag_providers.docs_provider import docs_provider
+from app.config import DEFAULT_PROVIDER
 
 # Configure logging for Docker (stdout only)
 logging.basicConfig(
@@ -31,7 +29,7 @@ logger = logging.getLogger(__name__)
 logger.info("Application starting up")
 
 # Set default RAG provider environment variable
-default_provider = os.environ.get("DEFAULT_RAG_PROVIDER", "topic")
+default_provider = os.environ.get("DEFAULT_RAG_PROVIDER", "docs")
 os.environ["DEFAULT_RAG_PROVIDER"] = default_provider
 logger.info(f"Default RAG provider set to: {default_provider}")
 
@@ -233,34 +231,18 @@ async def async_init_models():
     except Exception as e:
         logger.error(f"Error initializing models: {e}")
 
-    # Initialize topic provider first to ensure it's ready
     try:
-        # Initialize topic provider
-        await topic_provider.initialize({})
-        logger.info("Initialized topic provider")
-    except Exception as e:
-        logger.error(f"Error initializing topic provider: {e}")
+        # Initialize docs provider with default path
+        logger.info(f"Initializing docs provider with default path: {DEFAULT_PROVIDER}")
+        await docs_provider.initialize({"docs_path": DEFAULT_PROVIDER})
+        logger.info("Successfully initialized docs provider")
 
-    try:
-        # Initialize Aptos provider
-        await aptos_provider.initialize({})
-        logger.info("Initialized Aptos provider")
+        # Initialize aptos-learn provider
+        logger.info("Initializing aptos-learn provider")
+        await docs_provider.initialize({"docs_path": "aptos-learn"})
+        logger.info("Successfully initialized aptos-learn provider")
     except Exception as e:
-        logger.error(f"Error initializing Aptos provider: {e}")
-
-    try:
-        # Initialize GitHub provider
-        await github_provider.initialize({})
-        logger.info("Initialized GitHub provider")
-    except Exception as e:
-        logger.error(f"Error initializing GitHub provider: {e}")
-
-    try:
-        # Initialize custom provider
-        await custom_provider.initialize({})
-        logger.info("Initialized custom provider")
-    except Exception as e:
-        logger.error(f"Error initializing custom provider: {e}")
+        logger.error(f"Failed to initialize providers: {e}")
 
 
 @app.on_event("startup")

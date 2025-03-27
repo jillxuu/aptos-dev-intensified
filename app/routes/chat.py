@@ -21,6 +21,7 @@ import asyncio
 import re
 from fastapi import BackgroundTasks
 import json
+from app.config import get_docs_url, DOCS_BASE_URLS, DEFAULT_PROVIDER
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -49,6 +50,58 @@ router = APIRouter()
 
 # In-memory storage for chat histories (replace with database in production)
 chat_histories = []
+
+# Base template that's common across all providers
+BASE_TEMPLATE = """You are an AI assistant specialized in Aptos blockchain technology. Your task is to provide accurate, technical explanations based on the following documentation context:
+
+Context:
+{context}
+
+When answering:
+1. Be concise and to the point
+2. Use exact technical terminology from the documentation
+3. Include specific examples when relevant
+4. Format your responses using proper markdown:
+   - Use proper line breaks between paragraphs (double newline)
+   - For numbered lists, ensure each item is on a new line with a blank line before the list starts
+   - For code blocks, ALWAYS use triple backticks with language specification (e.g. ```typescript, ```python, ```move, ```json)
+   - Ensure code blocks have proper indentation and formatting
+   - For inline code, use single backticks
+"""
+
+# Provider-specific templates
+PROVIDER_TEMPLATES: Dict[str, str] = {
+    "developer-docs": BASE_TEMPLATE
+    + """
+5. When linking to Aptos documentation, ALWAYS use the full URL with the correct structure: {base_url}/en/[section]/[page]. For example:
+   - Use {base_url}/en/build/cli instead of {base_url}/cli
+   - Use {base_url}/en/sdks/ts-sdk instead of {base_url}/sdks/ts-sdk
+6. Always end your response with: "For further discussions or questions about {main_topic}, you can explore the [Aptos Dev Discussions](https://github.com/aptos-labs/aptos-developer-discussions/discussions)."
+""",
+    "aptos-learn": BASE_TEMPLATE
+    + """
+5. When linking to Aptos Learn content, use the following URL structure: {base_url}/en/[category]/[tutorial-name]/[page]
+   Categories include:
+   - tutorials
+   - workshops
+   - code-examples
+   - dapp-templates
+   
+   For example:
+   - Use {base_url}/en/tutorials/ethereum-to-aptos-guide/introduction
+   - Use {base_url}/en/workshops/first-move-module/first-move-module
+   - NEVER include parentheses or special characters in URLs (e.g., avoid "(theory)" in paths)
+
+6. Focus on providing learning-oriented explanations suitable for developers at different levels.
+7. When relevant, suggest appropriate workshops or tutorials from the Aptos Learn platform.
+8. Always end your response with: "To continue learning about {main_topic}, check out our interactive workshops and tutorials at [Aptos Learn](https://learn.aptoslabs.com/en)."
+""",
+}
+
+
+# Default to developer-docs template if provider not found
+def get_system_template(provider: str) -> str:
+    return PROVIDER_TEMPLATES.get(provider, PROVIDER_TEMPLATES["developer-docs"])
 
 
 def cosine_similarity(a: List[float], b: List[float]) -> float:
@@ -119,27 +172,6 @@ def extract_main_topic(question: str) -> str:
         return " ".join(words[:3]) + "..."
     else:
         return question.strip()
-
-
-SYSTEM_TEMPLATE = """You are an AI assistant specialized in Aptos blockchain technology. You have access to the official Aptos documentation from aptos.dev. Your task is to provide accurate, technical explanations based on the following documentation context:
-
-Context:
-{context}
-
-When answering:
-1. Be concise and to the point
-2. Use exact technical terminology from the documentation
-3. Include specific examples when relevant
-4. Format your responses using proper markdown:
-   - Use proper line breaks between paragraphs (double newline)
-   - For numbered lists, ensure each item is on a new line with a blank line before the list starts
-   - For code blocks, ALWAYS use triple backticks with language specification (e.g. ```typescript, ```python, ```move, ```json)
-   - Ensure code blocks have proper indentation and formatting
-   - For inline code, use single backticks
-5. When linking to Aptos documentation, ALWAYS use the full URL with the correct structure: https://aptos.dev/en/[section]/[page]. For example:
-   - Use https://aptos.dev/en/build/cli instead of https://aptos.dev/cli
-   - Use https://aptos.dev/en/sdks/ts-sdk instead of https://aptos.dev/sdks/ts-sdk
-6. Always end your response with: "For further discussions or questions about {main_topic}, you can explore the [Aptos Dev Discussions](https://github.com/aptos-labs/aptos-developer-discussions/discussions)." where {main_topic} is the main topic of the user's question."""
 
 
 @router.get(
@@ -451,6 +483,14 @@ async def generate_ai_response(
             return
 
         message = user_message.content
+
+        # Log the provider being used
+        provider_type = rag_provider or chat_history.metadata.get(
+            "rag_provider", DEFAULT_PROVIDER
+        )
+        logger.info(f"[RAG] Using provider: {provider_type} for chat {chat_id}")
+        logger.info(f"[RAG] Base URL will be: {DOCS_BASE_URLS[provider_type]}")
+
         logger.info(
             f"[RAG] Starting response generation for message: {message[:100]}... in chat {chat_id}"
         )
@@ -472,38 +512,26 @@ async def generate_ai_response(
         ]
         is_process_query = any(kw in message.lower() for kw in process_keywords)
 
-        # Get the RAG provider - always default to topic provider if not specified
+        # Get the RAG provider
         try:
-            # Use the specified provider or the default topic provider
+            # Use the specified provider or the default
             provider_name = rag_provider or DEFAULT_RAG_PROVIDER
-            rag_provider_obj = RAGProviderRegistry.get_provider(provider_name)
-            logger.info(f"[RAG] Using provider: {rag_provider_obj.name}")
+            rag_provider_obj = RAGProviderRegistry.get_provider(
+                "docs"
+            )  # Get the docs provider
+            # Switch to the correct provider path
+            await rag_provider_obj.switch_provider(provider_name)
+            logger.info(f"[RAG] Using provider: {provider_name}")
         except ValueError as e:
-            logger.warning(
-                f"[RAG] Provider error: {str(e)}, falling back to topic provider"
-            )
-            try:
-                # Try to get the topic provider explicitly
-                rag_provider_obj = RAGProviderRegistry.get_provider("topic")
-                logger.info(f"[RAG] Using topic provider as fallback")
-            except ValueError as e:
-                # No topic provider registered, try default provider
-                try:
-                    rag_provider_obj = RAGProviderRegistry.get_provider()
-                    logger.info(
-                        f"[RAG] Using default provider: {rag_provider_obj.name}"
-                    )
-                except ValueError as e:
-                    # No default provider registered, handle gracefully
-                    logger.error(f"Error generating AI response: {str(e)}")
-                    yield "I apologize, but I'm currently operating without access to the documentation. My responses may be limited. Please try again later or contact support."
-                    return
+            logger.error(f"Error getting RAG provider: {str(e)}")
+            yield "I apologize, but I'm currently operating without access to the documentation. My responses may be limited. Please try again later or contact support."
+            return
 
         # Get relevant context from documentation
         context_retrieval_start = datetime.now()
         logger.info("[RAG] Retrieving relevant context...")
         context_chunks = await rag_provider_obj.get_relevant_context(
-            message, k=3, include_series=is_process_query
+            message, k=3, include_series=is_process_query, provider_type=provider_name
         )
         context_retrieval_time = (
             datetime.now() - context_retrieval_start
@@ -570,9 +598,28 @@ async def generate_ai_response(
             f"[RAG] Total formatted context length: {context_length} characters"
         )
 
-        # Prepare the prompt with the context
-        prompt = SYSTEM_TEMPLATE.format(
-            context=formatted_context, question=message, main_topic=main_topic
+        # Get the provider type for URL formatting
+        provider_type = rag_provider or chat_history.metadata.get(
+            "rag_provider", DEFAULT_PROVIDER
+        )
+        base_url = DOCS_BASE_URLS[provider_type]
+
+        # Get the provider-specific template
+        template = get_system_template(provider_type)
+        logger.info(f"[RAG] Using template for provider: {provider_type}")
+
+        # Log the first few lines of the formatted context to verify source
+        context_preview = formatted_context.split("\n")[:5]
+        logger.info(
+            f"[RAG] Context preview (first 5 lines): {json.dumps(context_preview, indent=2)}"
+        )
+
+        # Prepare the prompt with the context and correct base URL
+        prompt = template.format(
+            context=formatted_context,
+            question=message,
+            main_topic=main_topic,
+            base_url=base_url,
         )
 
         # Generate the response
@@ -682,35 +729,20 @@ async def generate_ai_response(
         yield "I apologize, but I encountered an error while generating a response. Please try again later."
 
 
-def format_source_to_url(source_path: str) -> str:
+def format_source_to_url(
+    source_path: str, provider_type: str = "developer-docs"
+) -> str:
     """
-    Convert a documentation source path to a proper aptos.dev URL.
+    Convert a documentation source path to a proper URL.
 
     Args:
         source_path: The relative path from the documentation directory
+        provider_type: The provider type to use for the base URL
 
     Returns:
-        A properly formatted URL to the documentation on aptos.dev
+        A properly formatted URL to the documentation
     """
-    if not source_path:
-        return ""
-
-    # Remove file extension (.md or .mdx)
-    if source_path.endswith(".md") or source_path.endswith(".mdx"):
-        source_path = os.path.splitext(source_path)[0]
-
-    # Handle index files
-    if source_path.endswith("/index") or source_path == "index":
-        source_path = source_path[:-6] if source_path.endswith("/index") else ""
-
-    # Format the URL
-    url_path = source_path.replace(os.path.sep, "/")
-
-    # Ensure the URL starts with /en/ for the English documentation
-    if not url_path.startswith("en/"):
-        url_path = f"en/{url_path}"
-
-    return f"https://aptos.dev/{url_path}"
+    return get_docs_url(source_path, provider_type) if source_path else ""
 
 
 def get_firestore_chat() -> FirestoreChat:

@@ -24,17 +24,23 @@ MAX_CHUNKS_TO_RETURN = 5  # Maximum number of chunks to return
 
 async def load_enhanced_chunks(
     file_path: str = ENHANCED_CHUNKS_PATH,
+    docs_path: str = None,
 ) -> List[Dict[str, Any]]:
     """
     Load enhanced chunks from the specified file.
 
     Args:
         file_path: Path to the enhanced chunks file
+        docs_path: Optional path to the documentation directory
 
     Returns:
         List of enhanced chunks
     """
     try:
+        # If docs_path is provided, construct the file path
+        if docs_path:
+            file_path = os.path.join(docs_path, "enhanced_chunks.json")
+
         if not os.path.exists(file_path):
             logger.warning(f"Enhanced chunks file not found: {file_path}")
             return []
@@ -51,12 +57,14 @@ async def load_enhanced_chunks(
 
 async def initialize_vector_store(
     enhanced_chunks: List[Dict[str, Any]],
+    vector_store_path: str = None,
 ) -> Optional[FAISS]:
     """
     Initialize a vector store with enhanced chunks.
 
     Args:
         enhanced_chunks: List of enhanced chunks
+        vector_store_path: Optional path to save/load the vector store
 
     Returns:
         Initialized vector store or None if initialization fails
@@ -79,7 +87,27 @@ async def initialize_vector_store(
 
         # Initialize vector store
         embeddings = OpenAIEmbeddings()
+
+        # If vector store path exists, try to load it
+        if vector_store_path and os.path.exists(vector_store_path):
+            try:
+                logger.info(f"Loading existing vector store from {vector_store_path}")
+                vector_store = FAISS.load_local(
+                    vector_store_path, embeddings, allow_dangerous_deserialization=True
+                )
+                logger.info("Successfully loaded existing vector store")
+                return vector_store
+            except Exception as e:
+                logger.warning(f"Failed to load vector store, creating new one: {e}")
+
+        # Create new vector store
         vector_store = FAISS.from_documents(documents, embeddings)
+
+        # Save vector store if path is provided
+        if vector_store_path:
+            os.makedirs(os.path.dirname(vector_store_path), exist_ok=True)
+            vector_store.save_local(vector_store_path)
+            logger.info(f"Saved vector store to {vector_store_path}")
 
         logger.info(f"Initialized vector store with {len(documents)} documents")
         return vector_store

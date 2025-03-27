@@ -20,6 +20,7 @@ import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 import hashlib
+from app.config import CONTENT_PATHS, DEFAULT_PROVIDER
 
 # Add the project root to the path so we can import from app
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -594,9 +595,10 @@ def main():
         description="Preprocess documentation with topic-based chunking"
     )
     parser.add_argument(
-        "--docs-dir",
-        default="data/developer-docs/apps/nextra/pages/en",
-        help="Directory containing documentation files",
+        "--docs_dir",
+        type=str,
+        default=CONTENT_PATHS[DEFAULT_PROVIDER],
+        help="Path to the documentation directory",
     )
     parser.add_argument(
         "--output",

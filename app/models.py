@@ -25,6 +25,7 @@ import string
 import hashlib
 import pickle
 import asyncio
+from app.config import DOC_BASE_PATHS, CONTENT_PATHS, DEFAULT_PROVIDER
 
 load_dotenv()
 
@@ -54,292 +55,65 @@ except LookupError:
 
 # Track vector store state
 VECTOR_STORE_STATE_FILE = "data/vector_store_state.json"
-# Summary cache file
-SUMMARY_CACHE_FILE = "data/summary_cache.pkl"
+
+
+def get_summary_cache_path(provider: str = None) -> str:
+    """Get the path to the summary cache file for a specific provider."""
+    provider = provider or DEFAULT_PROVIDER
+    return f"data/{provider}/summary_cache.pkl"
+
+
+# Summary cache file - will be set per provider
+SUMMARY_CACHE_FILE = get_summary_cache_path()
 
 # In-memory summary cache
 summary_cache = {}
 
+# Update the docs parent directory reference
+docs_parent_dir = DOC_BASE_PATHS[DEFAULT_PROVIDER]
 
-def load_summary_cache():
+# Update the docs directory reference
+docs_dir = CONTENT_PATHS[DEFAULT_PROVIDER]
+
+
+def load_summary_cache(provider: str = None):
     """Load the summary cache from disk."""
     global summary_cache
+    cache_file = get_summary_cache_path(provider)
     try:
-        if os.path.exists(SUMMARY_CACHE_FILE):
-            with open(SUMMARY_CACHE_FILE, "rb") as f:
+        if os.path.exists(cache_file):
+            with open(cache_file, "rb") as f:
                 summary_cache = pickle.load(f)
                 logger.info(
-                    f"[SUMMARY] Loaded {len(summary_cache)} summaries from cache"
+                    f"[SUMMARY] Loaded {len(summary_cache)} summaries from cache for provider {provider or DEFAULT_PROVIDER}"
                 )
         else:
             summary_cache = {}
-            logger.info("[SUMMARY] No summary cache found, starting with empty cache")
+            logger.info(
+                f"[SUMMARY] No summary cache found for provider {provider or DEFAULT_PROVIDER}, starting with empty cache"
+            )
     except Exception as e:
-        logger.error(f"[SUMMARY] Error loading summary cache: {e}")
+        logger.error(
+            f"[SUMMARY] Error loading summary cache for provider {provider or DEFAULT_PROVIDER}: {e}"
+        )
         summary_cache = {}
 
 
-def save_summary_cache():
+def save_summary_cache(provider: str = None):
     """Save the summary cache to disk."""
+    cache_file = get_summary_cache_path(provider)
     try:
-        os.makedirs(os.path.dirname(SUMMARY_CACHE_FILE), exist_ok=True)
-        with open(SUMMARY_CACHE_FILE, "wb") as f:
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        with open(cache_file, "wb") as f:
             pickle.dump(summary_cache, f)
-        logger.info(f"[SUMMARY] Saved {len(summary_cache)} summaries to cache")
+        logger.info(
+            f"[SUMMARY] Saved {len(summary_cache)} summaries to cache for provider {provider or DEFAULT_PROVIDER}"
+        )
     except Exception as e:
-        logger.error(f"[SUMMARY] Error saving summary cache: {e}")
-
-
-def get_content_hash(content):
-    """Generate a hash for the content to use as a cache key."""
-    return hashlib.md5(content.encode("utf-8")).hexdigest()
-
-
-def get_cached_summary(content):
-    """Get a summary from the cache if it exists."""
-    if not content:
-        return None
-
-    content_hash = get_content_hash(content)
-    return summary_cache.get(content_hash)
-
-
-def cache_summary(content, summary):
-    """Add a summary to the cache."""
-    if not content or not summary:
-        return
-
-    content_hash = get_content_hash(content)
-    summary_cache[content_hash] = summary
-
-    # Periodically save the cache to disk (every 100 new entries)
-    if len(summary_cache) % 100 == 0:
-        save_summary_cache()
-
-
-def get_vector_store_state():
-    """Get the state of the vector store from the state file."""
-    if os.path.exists(VECTOR_STORE_STATE_FILE):
-        try:
-            with open(VECTOR_STORE_STATE_FILE, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"[RAG-INIT] Error reading vector store state: {e}")
-    return {}
-
-
-def save_vector_store_state(state):
-    """Save the state of the vector store to the state file."""
-    os.makedirs(os.path.dirname(VECTOR_STORE_STATE_FILE), exist_ok=True)
-    try:
-        with open(VECTOR_STORE_STATE_FILE, "w") as f:
-            json.dump(state, f)
-    except Exception as e:
-        logger.error(f"[RAG-INIT] Error saving vector store state: {e}")
-
-
-def rerank_documents(
-    query: str, documents: List[Dict[str, Any]], top_n: int = 5
-) -> List[Dict[str, Any]]:
-    """
-    Rerank documents using Cohere's reranking model.
-
-    Args:
-        query: The user query
-        documents: List of document dictionaries with 'content' field
-        top_n: Number of top documents to return
-
-    Returns:
-        List of reranked documents with updated scores
-    """
-    if not cohere_client:
-        logger.warning("Cohere client not initialized. Skipping reranking.")
-        return documents[:top_n]
-
-    try:
-        # Extract document texts for reranking
-        docs_for_rerank = [doc["content"] for doc in documents]
-
-        # Call Cohere's rerank API
-        rerank_results = cohere_client.rerank(
-            query=query,
-            documents=docs_for_rerank,
-            top_n=top_n,
-            model="rerank-english-v3.0",
+        logger.error(
+            f"[SUMMARY] Error saving summary cache for provider {provider or DEFAULT_PROVIDER}: {e}"
         )
 
-        # Create a new list of reranked documents
-        reranked_docs = []
-        for result in rerank_results.results:
-            # Get the original document
-            original_doc = documents[result.index]
-
-            # Create a new document with the reranked score
-            reranked_doc = original_doc.copy()
-            reranked_doc["score"] = result.relevance_score
-            reranked_docs.append(reranked_doc)
-
-        logger.info(f"Reranked {len(reranked_docs)} documents using Cohere")
-        return reranked_docs
-
-    except Exception as e:
-        logger.error(f"Error during reranking: {str(e)}", exc_info=True)
-        # Fallback to original ranking
-        return documents[:top_n]
-
-
-class ChatMessage(BaseModel):
-    """A message in a chat conversation."""
-
-    id: Optional[str] = None
-    role: str
-    content: str
-    timestamp: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
-
-    @validator("content")
-    def content_must_be_valid(cls, v):
-        """Validate that content is not None and is a string."""
-        if v is None:
-            raise ValueError("content cannot be None")
-        if not isinstance(v, str):
-            raise ValueError("content must be a string")
-        return v
-
-    @validator("metadata", pre=True)
-    def ensure_metadata(cls, v):
-        """Ensure metadata is a dictionary and initialize it if None."""
-        if v is None:
-            return {}
-        return v
-
-
-class ChatHistory(BaseModel):
-    """A chat history containing messages and metadata."""
-
-    id: str
-    title: str
-    timestamp: str
-    messages: List[ChatMessage]
-    client_id: str
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class ChatRequest(BaseModel):
-    """Request model for creating a new chat or adding messages."""
-
-    messages: List[ChatMessage]
-    temperature: float = 0.7
-    chat_id: Optional[str] = None
-    client_id: str
-    rag_provider: Optional[str] = None
-
-
-class ChatResponse(BaseModel):
-    """Response model for chat operations."""
-
-    response: str
-    sources: Optional[List[str]] = None
-    used_chunks: Optional[List[Dict[str, Any]]] = None
-    chat_id: str
-    message_id: str
-
-
-class ChatMessageRequest(BaseModel):
-    """Request model for adding a new message to an existing chat."""
-
-    content: str
-    message_id: Optional[str] = None
-    client_id: Optional[str] = None
-    chat_id: Optional[str] = None  # This should match the path parameter
-    role: str = "user"  # Default to "user" if not provided
-    rag_provider: Optional[str] = (
-        None  # If not provided, will use DEFAULT_RAG_PROVIDER from server config
-    )
-    temperature: Optional[float] = 0.7  # Add temperature field for consistency
-
-
-class ChatMessageResponse(BaseModel):
-    """Response model for message operations."""
-
-    response: str
-    sources: Optional[List[str]] = None
-    used_chunks: Optional[List[Dict[str, Any]]] = None
-    message_id: str
-    user_message_id: str
-
-
-class ChatHistoryResponse(BaseModel):
-    """Response model for retrieving a chat history."""
-
-    chat_id: str
-    title: str
-    messages: List[ChatMessage]
-
-
-class ChatHistoriesResponse(BaseModel):
-    """Response model for retrieving multiple chat histories."""
-
-    histories: List[ChatHistory]
-    total_count: int
-
-
-class StatusResponse(BaseModel):
-    """Generic response model for operation status."""
-
-    status: str
-    message: str
-
-
-class Feedback(BaseModel):
-    """Model for user feedback on chat responses."""
-
-    message_id: str
-    query: str
-    response: str
-    rating: bool
-    feedback_text: Optional[str] = None
-    category: Optional[str] = None
-    used_chunks: Optional[List[Dict[str, str]]] = None
-    timestamp: Optional[str] = None
-
-
-# Global variables for RAG components
-embeddings: Optional[OpenAIEmbeddings] = None
-vector_store: Optional[FAISS] = None
-bm25_index = None
-bm25_corpus = []
-bm25_doc_mapping = []  # Maps BM25 index positions to actual documents
-
-
-def load_summary_cache():
-    """Load the summary cache from disk."""
-    global summary_cache
-    try:
-        if os.path.exists(SUMMARY_CACHE_FILE):
-            with open(SUMMARY_CACHE_FILE, "rb") as f:
-                summary_cache = pickle.load(f)
-                logger.info(
-                    f"[SUMMARY] Loaded {len(summary_cache)} summaries from cache"
-                )
-        else:
-            summary_cache = {}
-            logger.info("[SUMMARY] No summary cache found, starting with empty cache")
-    except Exception as e:
-        logger.error(f"[SUMMARY] Error loading summary cache: {e}")
-        summary_cache = {}
-
-
-def save_summary_cache():
-    """Save the summary cache to disk."""
-    try:
-        os.makedirs(os.path.dirname(SUMMARY_CACHE_FILE), exist_ok=True)
-        with open(SUMMARY_CACHE_FILE, "wb") as f:
-            pickle.dump(summary_cache, f)
-        logger.info(f"[SUMMARY] Saved {len(summary_cache)} summaries to cache")
-    except Exception as e:
-        logger.error(f"[SUMMARY] Error saving summary cache: {e}")
-
 
 def get_content_hash(content):
     """Generate a hash for the content to use as a cache key."""
@@ -365,7 +139,7 @@ def cache_summary(content, summary):
 
     # Periodically save the cache to disk (every 100 new entries)
     if len(summary_cache) % 100 == 0:
-        save_summary_cache()
+        save_summary_cache(DEFAULT_PROVIDER)
 
 
 def get_vector_store_state():
@@ -812,7 +586,7 @@ async def batch_generate_summaries(
             logger.error(f"[SUMMARY] Error in batch processing: {e}")
 
     # Save the cache after processing all batches
-    save_summary_cache()
+    save_summary_cache(DEFAULT_PROVIDER)
 
     return summaries
 
@@ -887,7 +661,7 @@ async def initialize_models():
         logger.info("[RAG-INIT] Starting RAG components initialization...")
 
         # Load the summary cache
-        load_summary_cache()
+        load_summary_cache(DEFAULT_PROVIDER)
 
         # Initialize embeddings with OpenAI API key
         api_key = os.getenv("OPENAI_API_KEY")
@@ -2097,7 +1871,7 @@ async def rebuild_summary_cache():
                             doc.metadata["summary"] = summary
 
             # Save the cache
-            save_summary_cache()
+            save_summary_cache(DEFAULT_PROVIDER)
 
             logger.info(
                 f"[SUMMARY] Rebuilt summary cache with {len(summary_cache)} entries"

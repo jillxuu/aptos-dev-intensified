@@ -174,7 +174,7 @@ class FirestoreChat:
 
         except Exception as e:
             logger.error(f"Error retrieving client chat histories: {str(e)}")
-            return []  # Return empty list instead of raising
+            raise  # Propagate the error instead of returning empty list
 
 
 # Create a global instance

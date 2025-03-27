@@ -1,0 +1,74 @@
+2025-03-26 21:15:56,659 - __main__ - INFO - Processing documentation from data/developer-docs/apps/nextra/pages/en
+2025-03-26 21:15:56,690 - __main__ - INFO - Processed 50 files, found 326 chunks
+2025-03-26 21:15:56,701 - __main__ - INFO - Processed 100 files, found 712 chunks
+2025-03-26 21:15:56,716 - __main__ - INFO - Processed 150 files, found 1004 chunks
+2025-03-26 21:15:56,729 - __main__ - INFO - Processed 200 files, found 1317 chunks
+2025-03-26 21:15:56,746 - __main__ - INFO - Processed 250 files, found 1738 chunks
+2025-03-26 21:15:56,759 - __main__ - INFO - Processed 300 files, found 2131 chunks
+2025-03-26 21:15:56,769 - __main__ - INFO - Processed 341 files, found 2382 chunks
+2025-03-26 21:15:56,770 - __main__ - INFO - Analyzing topic relationships for 2382 chunks
+2025-03-26 21:15:57,737 - __main__ - INFO - Extracted topics for 2372 chunks
+2025-03-26 21:15:57,994 - __main__ - INFO - Processed relationships for 100/2382 chunks
+2025-03-26 21:15:58,241 - __main__ - INFO - Processed relationships for 200/2382 chunks
+2025-03-26 21:15:58,511 - __main__ - INFO - Processed relationships for 300/2382 chunks
+2025-03-26 21:15:58,772 - __main__ - INFO - Processed relationships for 400/2382 chunks
+2025-03-26 21:15:59,039 - __main__ - INFO - Processed relationships for 500/2382 chunks
+2025-03-26 21:15:59,291 - __main__ - INFO - Processed relationships for 600/2382 chunks
+2025-03-26 21:15:59,525 - __main__ - INFO - Processed relationships for 700/2382 chunks
+2025-03-26 21:15:59,772 - __main__ - INFO - Processed relationships for 800/2382 chunks
+2025-03-26 21:16:00,014 - __main__ - INFO - Processed relationships for 900/2382 chunks
+2025-03-26 21:16:00,267 - __main__ - INFO - Processed relationships for 1000/2382 chunks
+2025-03-26 21:16:00,513 - __main__ - INFO - Processed relationships for 1100/2382 chunks
+2025-03-26 21:16:00,758 - __main__ - INFO - Processed relationships for 1200/2382 chunks
+2025-03-26 21:16:01,011 - __main__ - INFO - Processed relationships for 1300/2382 chunks
+2025-03-26 21:16:01,276 - __main__ - INFO - Processed relationships for 1400/2382 chunks
+2025-03-26 21:16:01,529 - __main__ - INFO - Processed relationships for 1500/2382 chunks
+2025-03-26 21:16:01,795 - __main__ - INFO - Processed relationships for 1600/2382 chunks
+2025-03-26 21:16:02,147 - __main__ - INFO - Processed relationships for 1700/2382 chunks
+2025-03-26 21:16:02,407 - __main__ - INFO - Processed relationships for 1800/2382 chunks
+2025-03-26 21:16:02,670 - __main__ - INFO - Processed relationships for 1900/2382 chunks
+2025-03-26 21:16:02,940 - __main__ - INFO - Processed relationships for 2000/2382 chunks
+2025-03-26 21:16:03,209 - __main__ - INFO - Processed relationships for 2100/2382 chunks
+2025-03-26 21:16:03,468 - __main__ - INFO - Processed relationships for 2200/2382 chunks
+2025-03-26 21:16:03,719 - __main__ - INFO - Processed relationships for 2300/2382 chunks
+2025-03-26 21:16:03,937 - __main__ - INFO - Processed relationships for 2382/2382 chunks
+2025-03-26 21:16:03,937 - __main__ - INFO - Marking priority chunks
+2025-03-26 21:16:03,964 - __main__ - INFO - Marked 1823 priority chunks out of 2382
+2025-03-26 21:16:03,964 - __main__ - INFO - Storing enhanced metadata to data/developer-docs/enhanced_chunks.json
+2025-03-26 21:16:04,006 - __main__ - INFO - Stored 2382 enhanced chunks
+2025-03-26 21:16:04,006 - __main__ - INFO - Documentation processing complete
+2025-03-26 21:16:04,007 - __main__ - INFO - Preprocessing completed successfully
+2025-03-26 21:30:31,797 - __main__ - INFO - Processing documentation from data/aptos-learn/src/app/[locale]
+2025-03-26 21:30:31,831 - __main__ - INFO - Processed 50 files, found 235 chunks
+2025-03-26 21:30:31,845 - __main__ - INFO - Processed 100 files, found 348 chunks
+2025-03-26 21:30:31,856 - __main__ - INFO - Processed 140 files, found 458 chunks
+2025-03-26 21:30:31,856 - __main__ - INFO - Analyzing topic relationships for 458 chunks
+2025-03-26 21:30:32,059 - __main__ - INFO - Extracted topics for 456 chunks
+2025-03-26 21:30:32,108 - __main__ - INFO - Processed relationships for 100/458 chunks
+2025-03-26 21:30:32,155 - __main__ - INFO - Processed relationships for 200/458 chunks
+2025-03-26 21:30:32,204 - __main__ - INFO - Processed relationships for 300/458 chunks
+2025-03-26 21:30:32,256 - __main__ - INFO - Processed relationships for 400/458 chunks
+2025-03-26 21:30:32,334 - __main__ - INFO - Processed relationships for 458/458 chunks
+2025-03-26 21:30:32,335 - __main__ - INFO - Marking priority chunks
+2025-03-26 21:30:32,341 - __main__ - INFO - Marked 382 priority chunks out of 458
+2025-03-26 21:30:32,344 - __main__ - INFO - Storing enhanced metadata to data/aptos-learn/enhanced_chunks.json
+2025-03-26 21:30:32,407 - __main__ - INFO - Stored 458 enhanced chunks
+2025-03-26 21:30:32,407 - __main__ - INFO - Documentation processing complete
+2025-03-26 21:30:32,407 - __main__ - INFO - Preprocessing completed successfully
+2025-03-26 22:36:12,619 - __main__ - INFO - Processing documentation from data/aptos-learn/src/app/[locale]
+2025-03-26 22:36:12,651 - __main__ - INFO - Processed 50 files, found 235 chunks
+2025-03-26 22:36:12,664 - __main__ - INFO - Processed 100 files, found 348 chunks
+2025-03-26 22:36:12,675 - __main__ - INFO - Processed 140 files, found 458 chunks
+2025-03-26 22:36:12,675 - __main__ - INFO - Analyzing topic relationships for 458 chunks
+2025-03-26 22:36:12,880 - __main__ - INFO - Extracted topics for 456 chunks
+2025-03-26 22:36:12,930 - __main__ - INFO - Processed relationships for 100/458 chunks
+2025-03-26 22:36:12,976 - __main__ - INFO - Processed relationships for 200/458 chunks
+2025-03-26 22:36:13,026 - __main__ - INFO - Processed relationships for 300/458 chunks
+2025-03-26 22:36:13,080 - __main__ - INFO - Processed relationships for 400/458 chunks
+2025-03-26 22:36:13,107 - __main__ - INFO - Processed relationships for 458/458 chunks
+2025-03-26 22:36:13,107 - __main__ - INFO - Marking priority chunks
+2025-03-26 22:36:13,111 - __main__ - INFO - Marked 382 priority chunks out of 458
+2025-03-26 22:36:13,111 - __main__ - INFO - Storing enhanced metadata to data/aptos-learn/content/enhanced_chunks.json
+2025-03-26 22:36:13,121 - __main__ - INFO - Stored 458 enhanced chunks
+2025-03-26 22:36:13,121 - __main__ - INFO - Documentation processing complete
+2025-03-26 22:36:13,121 - __main__ - INFO - Preprocessing completed successfully
