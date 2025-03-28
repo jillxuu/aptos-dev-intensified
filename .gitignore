@@ -45,5 +45,6 @@ logs/
 *.swp
 *.swo
 
+.cursor/
 .cursorrules
 /.cursor/rules
