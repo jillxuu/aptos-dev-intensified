@@ -1,5 +1,5 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
@@ -17,10 +17,10 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@aptos/chatbot-core": ["../../packages/chatbot-core/src"],
-      "@aptos/chatbot-react": ["../../packages/chatbot-react/src"],
-      "@aptos/chatbot-ui-tailwind": ["../../packages/chatbot-ui-tailwind/src"]
+      "@aptos/chatbot-core": ["../packages/chatbot-core/src"],
+      "@aptos/chatbot-react": ["../packages/chatbot-react/src"],
+      "@aptos/chatbot-ui-tailwind": ["../packages/chatbot-ui-tailwind/src"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "src/types"]
 }

@@ -3,7 +3,7 @@ import { type ChatWidgetProps } from '@aptos/chatbot-react';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ChatSidebar } from './ChatSidebar';
-import '../../../developer-docs/apps/nextra/styles/chatbot.css';
+import './styles/chatbot.css';
 
 export function ChatWidget({
   messages,

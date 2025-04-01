@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { ChatbotProvider, useChatbot } from '@aptos/chatbot-react';
 import { ChatWidget } from '@aptos/chatbot-ui-base';
 import { RagProvider } from '@aptos/chatbot-core';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { Prism as SyntaxHighlighter, SyntaxHighlighterProps } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+
+const PrismSyntaxHighlighter = SyntaxHighlighter as unknown as React.FC<SyntaxHighlighterProps>;
 
 const basicExample = `// Basic Integration
 import { ChatbotProvider } from '@aptos/chatbot-react';
@@ -164,17 +166,20 @@ interface CodeBlockProps {
 function CodeBlock({ code, language = 'typescript' }: CodeBlockProps) {
   return (
     <div className="rounded-lg overflow-hidden">
-      <SyntaxHighlighter
-        language={language}
+      <PrismSyntaxHighlighter
         style={vscDarkPlus}
+        language={language}
+        PreTag="div"
+        className="rounded-lg overflow-x-auto"
         customStyle={{
           margin: 0,
+          padding: '1rem',
           borderRadius: '0.5rem',
           fontSize: '0.9rem',
         }}
       >
         {code}
-      </SyntaxHighlighter>
+      </PrismSyntaxHighlighter>
     </div>
   );
 }
