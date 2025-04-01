@@ -37,11 +37,14 @@ DEFAULT_RAG_PROVIDER = os.getenv("DEFAULT_RAG_PROVIDER", "topic")
 logger.info(f"Chat routes using default RAG provider: {DEFAULT_RAG_PROVIDER}")
 
 # Initialize embeddings model
-embeddings_model = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"))
+embeddings_model = OpenAIEmbeddings(
+    model="text-embedding-3-large",
+    openai_api_key=os.getenv("OPENAI_API_KEY")
+)
 
 # Initialize chat model
 chat_model = ChatOpenAI(
-    model_name="gpt-4o-2024-11-20",
+    model_name="gpt-4o",
     temperature=0.5,
     openai_api_key=os.getenv("OPENAI_API_KEY"),
     streaming=True,

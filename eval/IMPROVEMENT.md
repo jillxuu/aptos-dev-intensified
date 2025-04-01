@@ -193,38 +193,7 @@ def process_markdown_document(content: str, file_path: str = "") -> List[Documen
     return create_document_objects(enhanced_chunks, file_path)
 ```
 
-#### 2. Implement SDK and Document Type Detection
-```python
-def detect_sdk_type(content: str, file_path: str) -> str:
-    """Identify which SDK (if any) the document relates to."""
-    sdk_indicators = {
-        "typescript": ["typescript", "ts-sdk", "ts", "typescript sdk"],
-        "python": ["python", "python-sdk", ".py", "python sdk"],
-        "rust": ["rust", "rust-sdk", "rust sdk"]
-    }
-    
-    # Check file path for SDK indicators
-    path_lower = file_path.lower()
-    for sdk, indicators in sdk_indicators.items():
-        if any(ind in path_lower for ind in indicators):
-            return sdk
-            
-    # Check content for SDK indicators
-    content_lower = content.lower()
-    for sdk, indicators in sdk_indicators.items():
-        if any(ind in content_lower for ind in indicators):
-            return sdk
-    
-    return "general"  # Default if no SDK is detected
-
-def detect_document_type(content: str, file_path: str) -> str:
-    """Classify document as tutorial, reference, guide, etc."""
-    # Implementation based on path and content analysis
-    # ...
-    return document_type
-```
-
-#### 3. Create Hierarchical Chunk Structure
+#### 2. Create Hierarchical Chunk Structure
 ```python
 def create_hierarchical_chunks(chunks: List[Document]) -> List[Document]:
     """Create parent-child relationships between chunks."""
@@ -251,7 +220,7 @@ def create_hierarchical_chunks(chunks: List[Document]) -> List[Document]:
     return hierarchical_chunks
 ```
 
-#### 4. Implement Chunk Overlap Strategy
+#### 3. Implement Chunk Overlap Strategy
 ```python
 def create_overlapping_chunks(chunks: List[Document], overlap_percentage: float = 0.15) -> List[Document]:
     """Create overlapping chunks to prevent context loss at boundaries."""
@@ -274,7 +243,7 @@ def create_overlapping_chunks(chunks: List[Document], overlap_percentage: float 
     return overlapped_chunks
 ```
 
-#### 5. Enhanced Metadata Structure
+#### 4. Enhanced Metadata Structure
 ```python
 def enhance_chunk_metadata(chunk: Document, file_path: str, content: str) -> None:
     """Add rich metadata to each chunk."""
@@ -283,19 +252,23 @@ def enhance_chunk_metadata(chunk: Document, file_path: str, content: str) -> Non
     chunk.metadata["document_url"] = convert_path_to_url(file_path)
     chunk.metadata["last_updated"] = get_document_timestamp(file_path)
     
-    # Content type metadata
-    chunk.metadata["sdk_type"] = detect_sdk_type(content, file_path)
-    chunk.metadata["document_type"] = detect_document_type(content, file_path)
-    
     # Content analysis
     chunk.metadata["contains_code"] = has_code_block(content)
     chunk.metadata["code_languages"] = detect_code_languages(content)
     
-    # Create summary
+    # Create summary for better context
     chunk.metadata["summary"] = generate_chunk_summary(content)
+    
+    # If this is a code block, add code-specific summary
+    if chunk.metadata["contains_code"]:
+        chunk.metadata["code_summary"] = generate_code_summary(
+            code=content,
+            context=chunk.metadata.get("surrounding_text", ""),
+            parent_title=chunk.metadata.get("parent_title", "")
+        )
 ```
 
-#### 6. Main Processing Function
+#### 5. Main Processing Function
 ```python
 def process_documentation(docs_dir: str, output_path: str) -> None:
     """Enhanced documentation processing with improved chunking."""
@@ -715,7 +688,6 @@ async def enhanced_retrieval(original_query, vector_store):
     # Return only the documents and scores
     return [(item["doc"], item["score"]) for item in sorted_results[:7]]
 ```
-
 ### 4. Hierarchical Assembly with Prioritized Content
 
 Leverage the hierarchical structure when assembling the context for the LLM:
@@ -790,3 +762,77 @@ def assemble_context_by_priority(results, original_query, intent_analysis):
 5. **Hierarchical Presentation**: By maintaining relationships between code examples and their explanatory context, users receive both the code they need and the information required to understand it.
 
 This approach effectively addresses the challenge of retrieving relevant code examples without requiring separate embedding models, making it a pragmatic solution that can be implemented within the existing system architecture while significantly improving retrieval performance for code-related queries.
+
+## Future Consideration: Large Code Block Handling
+
+For future optimization, we may need to address how large code blocks are chunked compared to smaller ones. Currently, code blocks are treated as atomic units, which could be problematic for very large functions.
+
+### Potential Issues with Current Approach:
+1. Large functions create oversized chunks that:
+   - Consume too much of the context window
+   - Include excessive detail when only a specific part is relevant
+   - Result in imbalanced chunk sizes
+
+2. Small functions may be:
+   - Unnecessarily grouped together
+   - Missing important surrounding context
+   - Too granular for effective retrieval
+
+### Proposed Solution:
+
+```python
+def process_code_block(code_block: str, context: str, max_size: int = 1500) -> List[Dict]:
+    """Process code blocks based on their size and structure."""
+    
+    # For small functions (under max_size), keep as single chunk
+    if len(code_block) < max_size:
+        return [{
+            "content": code_block,
+            "context": context,
+            "is_code_block": True,
+            "is_partial": False
+        }]
+    
+    # For large functions, split intelligently
+    chunks = []
+    
+    # Try to split at logical boundaries
+    logical_parts = split_at_logical_boundaries(code_block)
+    
+    for i, part in enumerate(logical_parts):
+        chunks.append({
+            "content": part,
+            "context": context,
+            "is_code_block": True,
+            "is_partial": True,
+            "part_number": i + 1,
+            "total_parts": len(logical_parts),
+            "parent_function": extract_function_name(code_block)
+        })
+    
+    return chunks
+```
+
+Key improvements to consider:
+1. **Size-Based Processing**:
+   - Small functions (< 1500 chars) remain as single chunks
+   - Large functions are split while preserving logical structure
+
+2. **Metadata for Split Chunks**:
+   - Track partial chunks of larger functions
+   - Maintain part numbers and total parts
+   - Keep reference to parent function name
+
+3. **Context Preservation**:
+   - Each split chunk maintains reference to its parent context
+   - Important comments and documentation stay with relevant code
+   - Function signatures and important imports are preserved
+
+4. **Logical Splitting**:
+   - Split at major comment blocks
+   - Respect function/method boundaries
+   - Keep related code together
+   - Preserve code block integrity
+
+This enhancement should be considered after implementing and evaluating the current planned improvements. If retrieval quality for large code blocks remains an issue, this solution can be implemented to better handle varying code block sizes.
+

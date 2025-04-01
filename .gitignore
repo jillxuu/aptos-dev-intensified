@@ -48,3 +48,5 @@ logs/
 .cursor/
 .cursorrules
 /.cursor/rules
+
+firebase-credentials.json

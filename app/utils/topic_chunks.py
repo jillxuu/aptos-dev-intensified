@@ -76,17 +76,51 @@ async def initialize_vector_store(
             )
             return None
 
-        # Convert enhanced chunks to Documents
+        # Convert enhanced chunks to Documents with enhanced embedding text
         documents = []
         for chunk in enhanced_chunks:
-            doc = Document(
-                page_content=chunk["content"],
-                metadata={**chunk["metadata"], "id": chunk["id"]},
-            )
+            # For code blocks, create a combined representation that includes the summary
+            if chunk["metadata"].get("contains_code", True) and chunk["metadata"].get("code_summary"):
+                # Get metadata for context
+                code_summary = chunk["metadata"].get("code_summary", "")
+                parent_title = chunk["metadata"].get("parent_title", "")
+                title = chunk["metadata"].get("title", "")
+                code_languages = ", ".join(chunk["metadata"].get("code_languages", []))
+                
+                # Create enhanced embedding text that combines summary and code
+                embedding_text = f"""
+                Section: {parent_title or title}
+                
+                Purpose: {code_summary}
+                
+                Code{' (' + code_languages + ')' if code_languages else ''}:
+                {chunk["content"]}
+                """
+                
+                # Store original content in metadata and use enhanced text for embedding
+                doc = Document(
+                    page_content=embedding_text.strip(),  # Use combined text for embedding
+                    metadata={
+                        **chunk["metadata"], 
+                        "id": chunk["id"], 
+                        "original_content": chunk["content"],
+                        "is_enhanced_embedding": True
+                    }
+                )
+            else:
+                # For non-code blocks, use regular content
+                doc = Document(
+                    page_content=chunk["content"],
+                    metadata={**chunk["metadata"], "id": chunk["id"]}
+                )
+            
             documents.append(doc)
 
-        # Initialize vector store
-        embeddings = OpenAIEmbeddings()
+        # Initialize embeddings with text-embedding-3-large model
+        embeddings = OpenAIEmbeddings(
+            model="text-embedding-3-large",
+            openai_api_key=os.getenv("OPENAI_API_KEY")
+        )
 
         # If vector store path exists, try to load it
         if vector_store_path and os.path.exists(vector_store_path):
@@ -151,6 +185,14 @@ async def get_topic_aware_context(
 
             # Get the enhanced chunk
             enhanced_chunk = chunk_map[chunk_id]
+            
+            # If this was an enhanced embedding, use the original content for display
+            content = doc.metadata.get("original_content", doc.page_content)
+            
+            # Get code summary if available
+            code_summary = None
+            if doc.metadata.get("contains_code") and doc.metadata.get("code_summary"):
+                code_summary = doc.metadata.get("code_summary")
 
             # Get related chunks
             related_ids = enhanced_chunk["metadata"].get("related_topics", [])
@@ -177,16 +219,34 @@ async def get_topic_aware_context(
 
             # Sort related chunks by similarity
             related_chunks.sort(key=lambda x: x["similarity"], reverse=True)
+            
+            # Get hierarchical relationships if available
+            parent_id = doc.metadata.get("parent_id")
+            parent_info = None
+            
+            if parent_id:
+                for chunk in enhanced_chunks:
+                    if chunk["id"] == parent_id:
+                        parent_info = {
+                            "id": parent_id,
+                            "title": chunk["metadata"].get("title", ""),
+                            "summary": chunk["metadata"].get("summary", ""),
+                        }
+                        break
 
             # Format result
             result = {
-                "content": doc.page_content,
+                "content": content,
                 "section": doc.metadata.get("section", ""),
                 "source": doc.metadata.get("source", ""),
                 "summary": doc.metadata.get("summary", ""),
                 "score": float(score),
                 "is_priority": doc.metadata.get("is_priority", False),
                 "related_documents": related_chunks,
+                "is_code_block": doc.metadata.get("contains_code", False),
+                "code_summary": code_summary,
+                "code_languages": doc.metadata.get("code_languages", []),
+                "parent_info": parent_info,
             }
 
             results.append(result)
