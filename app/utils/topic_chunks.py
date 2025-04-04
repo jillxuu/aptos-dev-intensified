@@ -42,13 +42,12 @@ async def load_enhanced_chunks(
             file_path = os.path.join(docs_path, "enhanced_chunks.json")
 
         if not os.path.exists(file_path):
-            logger.warning(f"Enhanced chunks file not found: {file_path}")
+            logger.error(f"Enhanced chunks file not found: {file_path}")
             return []
 
         with open(file_path, "r") as f:
             enhanced_chunks = json.load(f)
 
-        logger.info(f"Loaded {len(enhanced_chunks)} enhanced chunks from {file_path}")
         return enhanced_chunks
     except Exception as e:
         logger.error(f"Error loading enhanced chunks: {e}")
@@ -80,13 +79,15 @@ async def initialize_vector_store(
         documents = []
         for chunk in enhanced_chunks:
             # For code blocks, create a combined representation that includes the summary
-            if chunk["metadata"].get("contains_code", True) and chunk["metadata"].get("code_summary"):
+            if chunk["metadata"].get("contains_code", True) and chunk["metadata"].get(
+                "code_summary"
+            ):
                 # Get metadata for context
                 code_summary = chunk["metadata"].get("code_summary", "")
                 parent_title = chunk["metadata"].get("parent_title", "")
                 title = chunk["metadata"].get("title", "")
                 code_languages = ", ".join(chunk["metadata"].get("code_languages", []))
-                
+
                 # Create enhanced embedding text that combines summary and code
                 embedding_text = f"""
                 Section: {parent_title or title}
@@ -96,43 +97,39 @@ async def initialize_vector_store(
                 Code{' (' + code_languages + ')' if code_languages else ''}:
                 {chunk["content"]}
                 """
-                
+
                 # Store original content in metadata and use enhanced text for embedding
                 doc = Document(
                     page_content=embedding_text.strip(),  # Use combined text for embedding
                     metadata={
-                        **chunk["metadata"], 
-                        "id": chunk["id"], 
+                        **chunk["metadata"],
+                        "chunk_id": chunk["id"],  # Add chunk_id to metadata
+                        "id": chunk[
+                            "id"
+                        ],  # Keep original id for backward compatibility
                         "original_content": chunk["content"],
-                        "is_enhanced_embedding": True
-                    }
+                        "is_enhanced_embedding": True,
+                    },
                 )
             else:
                 # For non-code blocks, use regular content
                 doc = Document(
                     page_content=chunk["content"],
-                    metadata={**chunk["metadata"], "id": chunk["id"]}
+                    metadata={
+                        **chunk["metadata"],
+                        "chunk_id": chunk["id"],  # Add chunk_id to metadata
+                        "id": chunk[
+                            "id"
+                        ],  # Keep original id for backward compatibility
+                    },
                 )
-            
+
             documents.append(doc)
 
         # Initialize embeddings with text-embedding-3-large model
         embeddings = OpenAIEmbeddings(
-            model="text-embedding-3-large",
-            openai_api_key=os.getenv("OPENAI_API_KEY")
+            model="text-embedding-3-large", openai_api_key=os.getenv("OPENAI_API_KEY")
         )
-
-        # If vector store path exists, try to load it
-        if vector_store_path and os.path.exists(vector_store_path):
-            try:
-                logger.info(f"Loading existing vector store from {vector_store_path}")
-                vector_store = FAISS.load_local(
-                    vector_store_path, embeddings, allow_dangerous_deserialization=True
-                )
-                logger.info("Successfully loaded existing vector store")
-                return vector_store
-            except Exception as e:
-                logger.warning(f"Failed to load vector store, creating new one: {e}")
 
         # Create new vector store
         vector_store = FAISS.from_documents(documents, embeddings)
@@ -141,9 +138,7 @@ async def initialize_vector_store(
         if vector_store_path:
             os.makedirs(os.path.dirname(vector_store_path), exist_ok=True)
             vector_store.save_local(vector_store_path)
-            logger.info(f"Saved vector store to {vector_store_path}")
 
-        logger.info(f"Initialized vector store with {len(documents)} documents")
         return vector_store
     except Exception as e:
         logger.error(f"Error initializing vector store: {e}")
@@ -169,26 +164,49 @@ async def get_topic_aware_context(
         List of relevant chunks with metadata
     """
     try:
+        # Validate inputs
+        if not vector_store:
+            logger.error("[TOPIC-AWARE] Vector store is None - cannot proceed")
+            return []
+
+        if not enhanced_chunks:
+            logger.error("[TOPIC-AWARE] No enhanced chunks provided - cannot proceed")
+            return []
+
         # Create a mapping of chunk IDs to enhanced chunks for quick lookup
         chunk_map = {chunk["id"]: chunk for chunk in enhanced_chunks}
 
         # Get relevant documents from vector store
-        # Use the non-async version of similarity_search_with_score
-        docs_with_scores = vector_store.similarity_search_with_score(query, k=k)
+        try:
+            docs_with_scores = vector_store.similarity_search_with_score(query, k=k)
+        except Exception as e:
+            logger.error(f"[TOPIC-AWARE] Error during similarity search: {str(e)}")
+            return []
 
         # Process results
         results = []
-        for doc, score in docs_with_scores:
-            chunk_id = doc.metadata.get("id")
-            if not chunk_id or chunk_id not in chunk_map:
+        for i, (doc, score) in enumerate(docs_with_scores):
+            # Try both chunk_id and id in metadata
+            chunk_id = doc.metadata.get("chunk_id") or doc.metadata.get("id")
+
+            if not chunk_id:
+                logger.warning(
+                    f"[TOPIC-AWARE] Document {i+1} has no chunk_id or id in metadata"
+                )
+                continue
+
+            if chunk_id not in chunk_map:
+                logger.warning(
+                    f"[TOPIC-AWARE] Chunk ID {chunk_id} not found in chunk map"
+                )
                 continue
 
             # Get the enhanced chunk
             enhanced_chunk = chunk_map[chunk_id]
-            
+
             # If this was an enhanced embedding, use the original content for display
             content = doc.metadata.get("original_content", doc.page_content)
-            
+
             # Get code summary if available
             code_summary = None
             if doc.metadata.get("contains_code") and doc.metadata.get("code_summary"):
@@ -219,11 +237,11 @@ async def get_topic_aware_context(
 
             # Sort related chunks by similarity
             related_chunks.sort(key=lambda x: x["similarity"], reverse=True)
-            
+
             # Get hierarchical relationships if available
             parent_id = doc.metadata.get("parent_id")
             parent_info = None
-            
+
             if parent_id:
                 for chunk in enhanced_chunks:
                     if chunk["id"] == parent_id:
@@ -253,9 +271,7 @@ async def get_topic_aware_context(
 
         # Sort results by score and priority status
         results.sort(key=lambda x: (not x["is_priority"], -x["score"]))
-
-        logger.info(f"Retrieved {len(results)} relevant chunks for query")
         return results
     except Exception as e:
-        logger.error(f"Error retrieving topic-aware context: {e}")
+        logger.error(f"[TOPIC-AWARE] Error retrieving topic-aware context: {str(e)}")
         return []

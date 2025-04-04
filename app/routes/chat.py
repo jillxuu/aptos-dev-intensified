@@ -38,8 +38,7 @@ logger.info(f"Chat routes using default RAG provider: {DEFAULT_RAG_PROVIDER}")
 
 # Initialize embeddings model
 embeddings_model = OpenAIEmbeddings(
-    model="text-embedding-3-large",
-    openai_api_key=os.getenv("OPENAI_API_KEY")
+    model="text-embedding-3-large", openai_api_key=os.getenv("OPENAI_API_KEY")
 )
 
 # Initialize chat model

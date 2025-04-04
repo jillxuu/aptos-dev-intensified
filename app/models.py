@@ -678,8 +678,7 @@ async def initialize_models():
             raise ValueError("OpenAI API key not found")
 
         embeddings = OpenAIEmbeddings(
-            model="text-embedding-3-large",
-            openai_api_key=api_key
+            model="text-embedding-3-large", openai_api_key=api_key
         )
         logger.info("[RAG-INIT] OpenAI embeddings initialized successfully")
 

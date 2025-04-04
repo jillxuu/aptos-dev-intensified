@@ -36,7 +36,7 @@ class DocsRAGProvider(RAGProvider):
             cls._instance.enhanced_chunks = []
             cls._instance.vector_store = None
             cls._instance._current_path = None
-            cls._instance.embeddings = OpenAIEmbeddings()
+            cls._instance.embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
             cls._instance._initialized_providers = {
                 provider_type: False for provider_type in PROVIDER_TYPES.__args__
             }
@@ -54,7 +54,7 @@ class DocsRAGProvider(RAGProvider):
         self.enhanced_chunks = []
         self.vector_store = None
         self._current_path = None
-        self.embeddings = OpenAIEmbeddings()
+        self.embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 
         # Map of initialized providers to avoid reinitializing
         self._initialized_providers = {
@@ -90,8 +90,26 @@ class DocsRAGProvider(RAGProvider):
             enhanced_chunks_file = os.path.join(
                 get_generated_data_path(provider_type), "enhanced_chunks.json"
             )
+            logger.info(f"Looking for enhanced chunks at: {enhanced_chunks_file}")
+
+            if not os.path.exists(enhanced_chunks_file):
+                logger.error(
+                    f"Enhanced chunks file not found at: {enhanced_chunks_file}"
+                )
+                raise FileNotFoundError(
+                    f"Enhanced chunks file not found at: {enhanced_chunks_file}"
+                )
+
+            file_size = os.path.getsize(enhanced_chunks_file) / (
+                1024 * 1024
+            )  # Convert to MB
+            logger.info(f"Found enhanced chunks file (size: {file_size:.2f}MB)")
+
             with open(enhanced_chunks_file, "r") as f:
                 self.enhanced_chunks = json.load(f)
+            logger.info(
+                f"Successfully loaded {len(self.enhanced_chunks)} chunks from file"
+            )
 
             # Initialize vector store
             vector_store_path = get_vector_store_path(provider_type)
@@ -157,28 +175,63 @@ class DocsRAGProvider(RAGProvider):
         Returns:
             List of dictionaries containing content, section, source, and metadata
         """
+        logger.info(f"[DOCS-RAG] Starting context retrieval for query: {query}")
+        logger.info(
+            f"[DOCS-RAG] Parameters: k={k}, include_series={include_series}, provider_type={provider_type}"
+        )
+
         if not self._initialized:
-            logger.warning("Docs RAG provider not initialized")
+            logger.warning("[DOCS-RAG] Provider not initialized - cannot proceed")
             return []
 
         try:
+            logger.info(f"[DOCS-RAG] Current provider path: {self._current_path}")
+
             # Switch provider if requested
             if provider_type and provider_type != self._current_path:
+                logger.info(
+                    f"[DOCS-RAG] Switching provider from {self._current_path} to {provider_type}"
+                )
                 await self.switch_provider(provider_type)
+                logger.info(
+                    f"[DOCS-RAG] Successfully switched to {provider_type} provider"
+                )
+
+            # Validate current state
+            if not self.vector_store:
+                logger.error("[DOCS-RAG] Vector store is None")
+                return []
+            if not self.enhanced_chunks:
+                logger.error("[DOCS-RAG] No enhanced chunks available")
+                return []
+
+            logger.info(
+                f"[DOCS-RAG] Using vector store with {len(self.enhanced_chunks)} chunks"
+            )
 
             # Get relevant context using topic-aware retrieval
+            logger.info("[DOCS-RAG] Calling get_topic_aware_context")
             results = await get_topic_aware_context(
                 query=query,
                 vector_store=self.vector_store,
                 enhanced_chunks=self.enhanced_chunks,
                 k=k,
             )
+            logger.info(
+                f"[DOCS-RAG] Retrieved {len(results)} results from topic-aware context"
+            )
 
             # Format results
             formatted_results = []
-            for result in results:
+            logger.info("[DOCS-RAG] Starting result formatting")
+
+            for i, result in enumerate(results):
                 source_path = result.get("source")
                 source_url = path_registry.get_url(source_path) if source_path else None
+
+                logger.debug(f"[DOCS-RAG] Processing result {i+1}/{len(results)}")
+                logger.debug(f"[DOCS-RAG] Source path: {source_path}")
+                logger.debug(f"[DOCS-RAG] Source URL: {source_url}")
 
                 formatted_result = {
                     "content": result["content"],
@@ -195,11 +248,36 @@ class DocsRAGProvider(RAGProvider):
                 }
                 formatted_results.append(formatted_result)
 
-            logger.info(f"Retrieved {len(formatted_results)} relevant chunks")
+                # Log details about each result
+                logger.debug(f"[DOCS-RAG] Result {i+1} details:")
+                logger.debug(f"[DOCS-RAG]   Section: {formatted_result['section']}")
+                logger.debug(f"[DOCS-RAG]   Score: {formatted_result['score']:.4f}")
+                logger.debug(
+                    f"[DOCS-RAG]   Priority: {formatted_result['metadata']['is_priority']}"
+                )
+                logger.debug(
+                    f"[DOCS-RAG]   Related docs: {len(formatted_result['metadata']['related_documents'])}"
+                )
+
+            # Log summary of results
+            if formatted_results:
+                logger.info("[DOCS-RAG] Top 3 results by score:")
+                sorted_results = sorted(
+                    formatted_results, key=lambda x: x["score"], reverse=True
+                )
+                for i, result in enumerate(sorted_results[:3]):
+                    logger.info(
+                        f"[DOCS-RAG] {i+1}. {result['section']} (score: {result['score']:.4f})"
+                    )
+
+            logger.info(
+                f"[DOCS-RAG] Successfully formatted {len(formatted_results)} results"
+            )
             return formatted_results
 
         except Exception as e:
-            logger.error(f"Error retrieving relevant context: {e}")
+            logger.error(f"[DOCS-RAG] Error retrieving relevant context: {str(e)}")
+            logger.error("[DOCS-RAG] Full traceback:", exc_info=True)
             return []
 
 

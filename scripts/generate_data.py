@@ -47,23 +47,18 @@ def initialize_vector_store(
             documents.append(doc)
 
         if not documents:
-            logger.warning(
-                f"No documents to create vector store at {vector_store_path}"
-            )
+            logger.error(f"No documents to create vector store at {vector_store_path}")
             # Create an empty directory to indicate initialization was attempted
             os.makedirs(os.path.dirname(vector_store_path), exist_ok=True)
             return
 
         # Initialize embeddings and vector store
-        embeddings = OpenAIEmbeddings()
+        embeddings = OpenAIEmbeddings("text-embedding-3-large")
         vector_store = FAISS.from_documents(documents, embeddings)
 
         # Save vector store
         os.makedirs(os.path.dirname(vector_store_path), exist_ok=True)
         vector_store.save_local(vector_store_path)
-        logger.info(
-            f"Saved vector store with {len(documents)} documents to {vector_store_path}"
-        )
 
     except Exception as e:
         logger.error(f"Error initializing vector store: {e}")
@@ -72,15 +67,12 @@ def initialize_vector_store(
 
 async def generate_provider_data(provider: str) -> None:
     """Generate all necessary data for a specific provider."""
-    logger.info(f"Generating data for provider: {provider}")
-
-    # Create generated data directory
-    generated_dir = get_generated_data_path(provider)
-    os.makedirs(generated_dir, exist_ok=True)
-
     try:
+        # Create generated data directory
+        generated_dir = get_generated_data_path(provider)
+        os.makedirs(generated_dir, exist_ok=True)
+
         # 1. Generate URL mappings
-        logger.info(f"Generating URL mappings for {provider}")
         docs_dir = os.path.join(get_content_path(provider), "apps/nextra/pages")
         if not os.path.exists(docs_dir):
             docs_dir = get_content_path(provider)  # Fallback to base content path
@@ -96,10 +88,8 @@ async def generate_provider_data(provider: str) -> None:
                 f,
                 default_flow_style=False,
             )
-        logger.info(f"Generated {len(mappings)} URL mappings for {provider}")
 
         # 2. Generate enhanced chunks
-        logger.info(f"Generating enhanced chunks for {provider}")
         enhanced_chunks_file = os.path.join(generated_dir, "enhanced_chunks.json")
         enhanced_chunks = process_documentation(
             docs_dir=docs_dir,  # Use the same docs_dir as URL mappings
@@ -107,11 +97,8 @@ async def generate_provider_data(provider: str) -> None:
         )
 
         # 3. Initialize and save vector store
-        logger.info(f"Initializing vector store for {provider}")
         vector_store_path = get_vector_store_path(provider)
         initialize_vector_store(enhanced_chunks, vector_store_path)
-
-        logger.info(f"Successfully generated all data for {provider}")
 
     except Exception as e:
         logger.error(f"Error generating data for {provider}: {e}")
@@ -120,12 +107,8 @@ async def generate_provider_data(provider: str) -> None:
 
 async def generate_all_data() -> None:
     """Generate all necessary data for all providers."""
-    logger.info("Starting data generation for all providers")
-
     for provider in PROVIDER_TYPES.__args__:
         await generate_provider_data(provider)
-
-    logger.info("Completed data generation for all providers")
 
 
 def main():
@@ -137,7 +120,6 @@ def main():
 
         # Run data generation
         asyncio.run(generate_all_data())
-        logger.info("Data generation completed successfully")
 
     except Exception as e:
         logger.error(f"Error during data generation: {e}")
