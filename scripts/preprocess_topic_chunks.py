@@ -20,7 +20,8 @@ import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 import hashlib
-from app.config import CONTENT_PATHS, DEFAULT_PROVIDER
+from app.config import CONTENT_PATHS, DEFAULT_PROVIDER, DOC_BASE_PATHS
+from app.path_registry import path_registry
 
 # Add the project root to the path so we can import from app
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -93,6 +94,8 @@ SIMILARITY_THRESHOLD = 0.2  # Minimum similarity score to consider chunks relate
 MAX_RELATED_CHUNKS = 10  # Maximum number of related chunks to store
 MIN_KEYWORD_LENGTH = 4  # Minimum length for a keyword to be considered significant
 MAX_KEYWORDS_PER_CHUNK = 20  # Maximum number of keywords to extract per chunk
+
+path_registry = PathRegistry()
 
 
 def extract_significant_keywords(title: str, content: str) -> Set[str]:
@@ -447,82 +450,58 @@ def store_enhanced_metadata(
 
 
 def process_markdown_document(content: str, file_path: str = "") -> List[Document]:
-    """
-    Process markdown content and split it into sections.
+    """Process a markdown document into chunks with metadata."""
+    try:
+        # Get normalized path from registry
+        normalized_path = path_registry.register_file(file_path)
 
-    Args:
-        content: The markdown content to process
-        file_path: The path to the file (for metadata)
+        # Get URL for the path
+        url = path_registry.get_url(normalized_path)
 
-    Returns:
-        List of Document objects
-    """
-    # Simple implementation to split by headers
-    lines = content.split("\n")
-    chunks = []
-    current_chunk = []
-    current_title = ""
+        # Base metadata
+        metadata = {"source": normalized_path, "url": url}
 
-    for line in lines:
-        if line.startswith("# "):
-            # Save previous chunk if it exists
-            if current_chunk and current_title:
-                chunks.append((current_title, "\n".join(current_chunk)))
-            # Start new chunk
-            current_title = line.replace("# ", "").strip()
-            current_chunk = []
-        elif line.startswith("## "):
-            # Save previous chunk if it exists
-            if current_chunk and current_title:
-                chunks.append((current_title, "\n".join(current_chunk)))
-            # Start new chunk
-            current_title = line.replace("## ", "").strip()
-            current_chunk = []
-        elif line.startswith("### "):
-            # Save previous chunk if it exists
-            if current_chunk and current_title:
-                chunks.append((current_title, "\n".join(current_chunk)))
-            # Start new chunk
-            current_title = line.replace("### ", "").strip()
-            current_chunk = []
-        else:
-            current_chunk.append(line)
+        # Process the document into chunks
+        chunks = []
+        current_section = ""
+        current_content = []
 
-    # Save the last chunk
-    if current_chunk and current_title:
-        chunks.append((current_title, "\n".join(current_chunk)))
+        for line in content.split("\n"):
+            if line.startswith("#"):
+                # If we have content, create a chunk
+                if current_content:
+                    chunk_content = "\n".join(current_content).strip()
+                    if chunk_content:
+                        chunk_metadata = {**metadata, "section": current_section}
+                        chunks.append(
+                            Document(
+                                page_content=chunk_content, metadata=chunk_metadata
+                            )
+                        )
+                # Update section title
+                current_section = line.lstrip("#").strip()
+                current_content = []
+            else:
+                current_content.append(line)
 
-    # If no chunks were created (no headers), create one chunk with the whole content
-    if not chunks:
-        title = os.path.basename(file_path) if file_path else "Untitled"
-        chunks.append((title, content))
+        # Handle the last chunk
+        if current_content:
+            chunk_content = "\n".join(current_content).strip()
+            if chunk_content:
+                chunk_metadata = {**metadata, "section": current_section}
+                chunks.append(
+                    Document(page_content=chunk_content, metadata=chunk_metadata)
+                )
 
-    # Convert to Document objects
-    documents = []
-    for title, content in chunks:
-        if len(content.strip()) > 0:  # Only include non-empty chunks
-            doc = Document(
-                page_content=content,
-                metadata={
-                    "title": title,
-                    "source": file_path,
-                    # Generate a simple summary
-                    "summary": title + " - " + content[:100] + "...",
-                },
-            )
-            documents.append(doc)
+        return chunks
 
-    return documents
+    except Exception as e:
+        logger.error(f"Error processing markdown document: {e}")
+        return []
 
 
-def process_documentation(docs_dir: str, output_path: str) -> None:
-    """
-    Process documentation with topic-based chunking.
-
-    Args:
-        docs_dir: Directory containing documentation files
-        output_path: Path to store the enhanced data
-    """
+def process_docs_with_topics(docs_dir: str) -> List[Dict[str, Any]]:
+    """Process documentation with topic-based chunking."""
     logger.info(f"Processing documentation from {docs_dir}")
 
     # 1. Load and process documents
@@ -583,32 +562,88 @@ def process_documentation(docs_dir: str, output_path: str) -> None:
     # 3. Mark priority chunks
     mark_priority_chunks(chunks)
 
-    # 4. Store enhanced data
-    store_enhanced_metadata(chunks, relationships, output_path)
+    # 4. Store enhanced data in memory
+    enhanced_data = []
+    for chunk in chunks:
+        chunk_id = chunk.metadata.get("chunk_id")
+        if not chunk_id:
+            continue
 
-    logger.info("Documentation processing complete")
+        # Get related chunks for this chunk
+        related = relationships.get(chunk_id, [])
+
+        # Add relationship metadata
+        enhanced_chunk = {
+            "id": chunk_id,
+            "content": chunk.page_content,
+            "metadata": {
+                **chunk.metadata,
+                "related_topics": [r["chunk_id"] for r in related],
+                "topic_similarity_scores": {
+                    r["chunk_id"]: r["similarity"] for r in related
+                },
+            },
+        }
+        enhanced_data.append(enhanced_chunk)
+
+    logger.info(f"Created {len(enhanced_data)} enhanced chunks")
+    return enhanced_data
+
+
+def process_documentation(docs_dir: str, output_path: str) -> List[Dict[str, Any]]:
+    """Process documentation and save enhanced chunks."""
+    try:
+        # Process documentation and get enhanced chunks
+        enhanced_chunks = process_docs_with_topics(docs_dir)
+
+        # Save enhanced chunks
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, "w") as f:
+            json.dump(enhanced_chunks, f, indent=2)
+        logger.info(f"Saved {len(enhanced_chunks)} enhanced chunks to {output_path}")
+
+        return enhanced_chunks
+
+    except Exception as e:
+        logger.error(f"Error processing documentation: {e}")
+        raise
+
+
+def save_enhanced_chunks(
+    chunks: List[Dict[str, Any]], provider: str = DEFAULT_PROVIDER
+) -> None:
+    """Save enhanced chunks to a JSON file."""
+    output_dir = f"data/generated/{provider}"
+    output_file = os.path.join(output_dir, "enhanced_chunks.json")
+
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Save enhanced chunks
+    with open(output_file, "w") as f:
+        json.dump(chunks, f, indent=2)
+    logger.info(f"Saved {len(chunks)} enhanced chunks to {output_file}")
 
 
 def main():
-    """Main entry point for the script."""
-    parser = argparse.ArgumentParser(
-        description="Preprocess documentation with topic-based chunking"
-    )
+    """Main entry point."""
+    parser = argparse.ArgumentParser(description="Process Aptos documentation")
     parser.add_argument(
-        "--docs_dir",
-        type=str,
+        "--docs-dir",
         default=CONTENT_PATHS[DEFAULT_PROVIDER],
         help="Path to the documentation directory",
     )
     parser.add_argument(
         "--output",
-        default="data/enhanced_chunks.json",
+        default=os.path.join(DOC_BASE_PATHS[DEFAULT_PROVIDER], "enhanced_chunks.json"),
         help="Path to store the enhanced data",
     )
     args = parser.parse_args()
 
     # Create logs directory if it doesn't exist
     os.makedirs("logs", exist_ok=True)
+    # Create output directory if it doesn't exist
+    os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
     try:
         process_documentation(args.docs_dir, args.output)

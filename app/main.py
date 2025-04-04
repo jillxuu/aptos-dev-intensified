@@ -16,7 +16,11 @@ from app.routes import chat
 from app.models import initialize_models
 from app.rag_providers import RAGProviderRegistry
 from app.rag_providers.docs_provider import docs_provider
-from app.config import DEFAULT_PROVIDER
+from app.config import (
+    DEFAULT_PROVIDER,
+    PROVIDER_TYPES,
+    get_generated_data_path,
+)
 
 # Configure logging for Docker (stdout only)
 logging.basicConfig(
@@ -222,6 +226,17 @@ app.include_router(chat.router, prefix="/api", tags=["Chat"])
 
 
 # Async initialization of models and providers
+async def check_required_data(provider: str) -> bool:
+    """Check if required data exists for a provider."""
+    generated_dir = get_generated_data_path(provider)
+    required_files = [
+        os.path.join(generated_dir, "url_mappings.yaml"),
+        os.path.join(generated_dir, "enhanced_chunks.json"),
+        os.path.join(generated_dir, "vector_store"),
+    ]
+    return all(os.path.exists(path) for path in required_files)
+
+
 async def async_init_models():
     """Initialize models and providers on startup."""
     try:
@@ -232,6 +247,16 @@ async def async_init_models():
         logger.error(f"Error initializing models: {e}")
 
     try:
+        # Check and generate required data for each provider
+        for provider in PROVIDER_TYPES.__args__:
+            if not await check_required_data(provider):
+                logger.info(f"Required data missing for {provider}, generating...")
+                from scripts.generate_data import generate_provider_data
+
+                await generate_provider_data(provider)
+            else:
+                logger.info(f"Required data exists for {provider}")
+
         # Initialize docs provider with default path
         logger.info(f"Initializing docs provider with default path: {DEFAULT_PROVIDER}")
         await docs_provider.initialize({"docs_path": DEFAULT_PROVIDER})

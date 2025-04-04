@@ -25,7 +25,13 @@ import string
 import hashlib
 import pickle
 import asyncio
-from app.config import DOC_BASE_PATHS, CONTENT_PATHS, DEFAULT_PROVIDER
+from app.config import (
+    DOC_BASE_PATHS,
+    CONTENT_PATHS,
+    DEFAULT_PROVIDER,
+    get_vector_store_path,
+    get_generated_data_path,
+)
 
 load_dotenv()
 
@@ -54,13 +60,15 @@ except LookupError:
     nltk.download("punkt_tab", quiet=True)
 
 # Track vector store state
-VECTOR_STORE_STATE_FILE = "data/vector_store_state.json"
+VECTOR_STORE_STATE_FILE = os.path.join(
+    get_generated_data_path(DEFAULT_PROVIDER), "vector_store_state.json"
+)
 
 
 def get_summary_cache_path(provider: str = None) -> str:
     """Get the path to the summary cache file for a specific provider."""
     provider = provider or DEFAULT_PROVIDER
-    return f"data/{provider}/summary_cache.pkl"
+    return os.path.join(get_generated_data_path(provider), "summary_cache.pkl")
 
 
 # Summary cache file - will be set per provider
@@ -673,7 +681,7 @@ async def initialize_models():
         logger.info("[RAG-INIT] OpenAI embeddings initialized successfully")
 
         # Initialize vector store directory
-        vector_store_path = "data/faiss"
+        vector_store_path = get_vector_store_path(DEFAULT_PROVIDER)
         rebuild_vectorstore = False
 
         # Get current state
@@ -1749,7 +1757,7 @@ async def load_aptos_docs(
                 logger.info(
                     f"[RAG-DOCS] Adding {len(documents)} document sections to vector store"
                 )
-                vector_store_path = "data/faiss"
+                vector_store_path = get_vector_store_path(DEFAULT_PROVIDER)
 
                 # Process documents in batches to avoid memory issues
                 batch_size = 500

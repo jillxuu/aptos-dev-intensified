@@ -13,6 +13,12 @@ DOC_BASE_PATHS: Dict[str, str] = {
     "aptos-learn": os.getenv("APTOS_LEARN_PATH", "data/aptos-learn"),
 }
 
+# Generated data paths
+GENERATED_DATA_PATHS: Dict[str, str] = {
+    "developer-docs": "data/generated/developer-docs",
+    "aptos-learn": "data/generated/aptos-learn",
+}
+
 # Documentation URL settings
 DOCS_BASE_URLS: Dict[str, str] = {
     "developer-docs": os.getenv("DEVELOPER_DOCS_URL", "https://aptos.dev"),
@@ -22,15 +28,22 @@ DOCS_LANG_PREFIX = os.getenv("DOCS_LANG_PREFIX", "en")
 
 # Vector store paths
 VECTOR_STORE_PATHS: Dict[str, str] = {
-    "developer-docs": os.path.join(DOC_BASE_PATHS["developer-docs"], "vector_store"),
-    "aptos-learn": os.path.join(DOC_BASE_PATHS["aptos-learn"], "vector_store"),
+    "developer-docs": os.path.join(
+        GENERATED_DATA_PATHS["developer-docs"], "vector_store"
+    ),
+    "aptos-learn": os.path.join(GENERATED_DATA_PATHS["aptos-learn"], "vector_store"),
 }
 
 # Documentation content paths
 CONTENT_PATHS: Dict[str, str] = {
     "developer-docs": DOC_BASE_PATHS["developer-docs"],
-    "aptos-learn": os.path.join(DOC_BASE_PATHS["aptos-learn"], "content"),
+    "aptos-learn": os.path.join(DOC_BASE_PATHS["aptos-learn"], "src", "content"),
 }
+
+
+def get_generated_data_path(provider: PROVIDER_TYPES) -> str:
+    """Get the generated data path for a provider."""
+    return GENERATED_DATA_PATHS[provider]
 
 
 def get_vector_store_path(provider: PROVIDER_TYPES) -> str:

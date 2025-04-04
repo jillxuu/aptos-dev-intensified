@@ -17,21 +17,21 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app/ ./app/
+COPY scripts/ ./scripts/
 
-# Create data directory first
-RUN mkdir -p ./data
+# Create data directories
+RUN mkdir -p ./data/generated/developer-docs && \
+    mkdir -p ./data/generated/aptos-learn
 
-# Copy data files
-COPY data/enhanced_chunks.json ./data/enhanced_chunks.json
-COPY data/summary_cache.pkl ./data/summary_cache.pkl
-
-# Create necessary directories and clone documentation
-RUN mkdir -p data/faiss && \
-    git clone --depth 1 https://github.com/aptos-labs/developer-docs.git data/developer-docs
+# Clone documentation
+RUN git clone --depth 1 https://github.com/aptos-labs/developer-docs.git data/developer-docs
 
 # Set environment variables
 ENV PORT=8080
 ENV HOST=0.0.0.0
+
+# Generate initial data
+RUN python scripts/generate_data.py
 
 # Run the application
 CMD ["python", "-m", "app.main"] 

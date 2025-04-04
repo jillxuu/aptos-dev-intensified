@@ -69,9 +69,9 @@ async def rebuild_cache():
     """Rebuild the summary cache."""
     # Load existing cache
     load_summary_cache(DEFAULT_PROVIDER)
-    
+
     # Your rebuilding logic here
-    
+
     # Save updated cache
     save_summary_cache(DEFAULT_PROVIDER)
 

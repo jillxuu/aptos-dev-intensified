@@ -22,6 +22,7 @@ import re
 from fastapi import BackgroundTasks
 import json
 from app.config import get_docs_url, DOCS_BASE_URLS, DEFAULT_PROVIDER
+from app.path_registry import path_registry
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -67,34 +68,25 @@ When answering:
    - For code blocks, ALWAYS use triple backticks with language specification (e.g. ```typescript, ```python, ```move, ```json)
    - Ensure code blocks have proper indentation and formatting
    - For inline code, use single backticks
-"""
+5. When linking to documentation, ALWAYS use the full URL from the base URL {base_url}. For example, if linking to 'en/build/sdks', use '{base_url}/en/build/sdks'
+6. ONLY use the following validated URLs:
+{valid_urls}
+
+DO NOT construct URLs manually. Only use the exact URLs listed above."""
 
 # Provider-specific templates
 PROVIDER_TEMPLATES: Dict[str, str] = {
     "developer-docs": BASE_TEMPLATE
     + """
-5. When linking to Aptos documentation, ALWAYS use the full URL with the correct structure: {base_url}/en/[section]/[page]. For example:
-   - Use {base_url}/en/build/cli instead of {base_url}/cli
-   - Use {base_url}/en/sdks/ts-sdk instead of {base_url}/sdks/ts-sdk
-6. Always end your response with: "For further discussions or questions about {main_topic}, you can explore the [Aptos Dev Discussions](https://github.com/aptos-labs/aptos-developer-discussions/discussions)."
+
+7. Always end your response with: "For further discussions or questions about {main_topic}, you can explore the [Aptos Dev Discussions](https://github.com/aptos-labs/aptos-developer-discussions/discussions)."
 """,
     "aptos-learn": BASE_TEMPLATE
     + """
-5. When linking to Aptos Learn content, use the following URL structure: {base_url}/en/[category]/[tutorial-name]/[page]
-   Categories include:
-   - tutorials
-   - workshops
-   - code-examples
-   - dapp-templates
-   
-   For example:
-   - Use {base_url}/en/tutorials/ethereum-to-aptos-guide/introduction
-   - Use {base_url}/en/workshops/first-move-module/first-move-module
-   - NEVER include parentheses or special characters in URLs (e.g., avoid "(theory)" in paths)
 
-6. Focus on providing learning-oriented explanations suitable for developers at different levels.
-7. When relevant, suggest appropriate workshops or tutorials from the Aptos Learn platform.
-8. Always end your response with: "To continue learning about {main_topic}, check out our interactive workshops and tutorials at [Aptos Learn](https://learn.aptoslabs.com/en)."
+7. Focus on providing learning-oriented explanations suitable for developers at different levels.
+8. When relevant, suggest appropriate workshops or tutorials from the Aptos Learn platform.
+9. Always end your response with: "To continue learning about {main_topic}, check out our interactive workshops and tutorials at [Aptos Learn]({base_url}/en)."
 """,
 }
 
@@ -538,31 +530,35 @@ async def generate_ai_response(
         ).total_seconds()
 
         if not context_chunks:
-            logger.warning(
-                "[RAG] No context chunks retrieved - RAG may not be properly initialized"
-            )
+            logger.warning("[RAG] No context chunks retrieved")
             yield "I apologize, but I'm currently operating without access to the documentation. My responses may be limited."
             return
 
-        logger.info(f"[RAG] Retrieved {len(context_chunks)} context chunks")
-
-        # Group chunks by series
+        # Separate chunks into series and non-series
         series_chunks = {}
         non_series_chunks = []
-
         for chunk in context_chunks:
-            if chunk.get("is_part_of_series"):
-                series_title = chunk.get("series_title", "Unknown Series")
-                if series_title not in series_chunks:
-                    series_chunks[series_title] = []
-                series_chunks[series_title].append(chunk)
+            if chunk.get("series_title") and chunk.get("series_position"):
+                if chunk["series_title"] not in series_chunks:
+                    series_chunks[chunk["series_title"]] = []
+                series_chunks[chunk["series_title"]].append(chunk)
             else:
                 non_series_chunks.append(chunk)
 
         # Sort series chunks by position
-        for series_title, chunks in series_chunks.items():
-            chunks.sort(key=lambda x: x.get("series_position", 0))
-            logger.info(f"[RAG] Series '{series_title}' has {len(chunks)} chunks")
+        for series in series_chunks.values():
+            series.sort(key=lambda x: x.get("series_position", 0))
+
+        # Get valid URLs from the path registry
+        valid_urls = path_registry.get_all_urls()
+        if not valid_urls:
+            logger.warning("[RAG] No valid URLs available")
+
+        # Format valid URLs for the prompt with base URL
+        base_url = DOCS_BASE_URLS[provider_type]
+        formatted_urls = "\n".join(
+            [f"- {base_url}/{url.lstrip('/')}" for url in valid_urls]
+        )
 
         # Format context for the prompt
         formatted_context = ""
@@ -602,7 +598,6 @@ async def generate_ai_response(
         provider_type = rag_provider or chat_history.metadata.get(
             "rag_provider", DEFAULT_PROVIDER
         )
-        base_url = DOCS_BASE_URLS[provider_type]
 
         # Get the provider-specific template
         template = get_system_template(provider_type)
@@ -614,12 +609,13 @@ async def generate_ai_response(
             f"[RAG] Context preview (first 5 lines): {json.dumps(context_preview, indent=2)}"
         )
 
-        # Prepare the prompt with the context and correct base URL
+        # Prepare the prompt with the context, valid URLs, and correct base URL
         prompt = template.format(
             context=formatted_context,
             question=message,
             main_topic=main_topic,
             base_url=base_url,
+            valid_urls=formatted_urls,
         )
 
         # Generate the response

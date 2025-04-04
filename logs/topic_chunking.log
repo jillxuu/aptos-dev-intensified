@@ -72,3 +72,105 @@
 2025-03-26 22:36:13,121 - __main__ - INFO - Stored 458 enhanced chunks
 2025-03-26 22:36:13,121 - __main__ - INFO - Documentation processing complete
 2025-03-26 22:36:13,121 - __main__ - INFO - Preprocessing completed successfully
+2025-04-03 16:41:09,002 - __main__ - INFO - Processing documentation from data/developer-docs
+2025-04-03 16:41:09,052 - __main__ - INFO - Processed 50 files, found 597 chunks
+2025-04-03 16:41:09,063 - __main__ - INFO - Processed 100 files, found 852 chunks
+2025-04-03 16:41:09,072 - __main__ - INFO - Processed 150 files, found 1196 chunks
+2025-04-03 16:41:09,082 - __main__ - INFO - Processed 200 files, found 1560 chunks
+2025-04-03 16:41:09,092 - __main__ - INFO - Processed 250 files, found 1839 chunks
+2025-04-03 16:41:09,103 - __main__ - INFO - Processed 300 files, found 2169 chunks
+2025-04-03 16:41:09,117 - __main__ - INFO - Processed 350 files, found 2564 chunks
+2025-04-03 16:41:09,129 - __main__ - INFO - Processed 400 files, found 2977 chunks
+2025-04-03 16:41:09,141 - __main__ - INFO - Processed 448 files, found 3277 chunks
+2025-04-03 16:41:09,141 - __main__ - INFO - Analyzing topic relationships for 3277 chunks
+2025-04-03 16:41:10,428 - __main__ - INFO - Extracted topics for 3264 chunks
+2025-04-03 16:41:10,744 - __main__ - INFO - Processed relationships for 100/3277 chunks
+2025-04-03 16:41:11,262 - __main__ - INFO - Processed relationships for 200/3277 chunks
+2025-04-03 16:41:11,592 - __main__ - INFO - Processed relationships for 300/3277 chunks
+2025-04-03 16:41:11,915 - __main__ - INFO - Processed relationships for 400/3277 chunks
+2025-04-03 16:41:12,193 - __main__ - INFO - Processed relationships for 500/3277 chunks
+2025-04-03 16:41:12,507 - __main__ - INFO - Processed relationships for 600/3277 chunks
+2025-04-03 16:41:12,775 - __main__ - INFO - Processed relationships for 700/3277 chunks
+2025-04-03 16:41:13,059 - __main__ - INFO - Processed relationships for 800/3277 chunks
+2025-04-03 16:41:13,394 - __main__ - INFO - Processed relationships for 900/3277 chunks
+2025-04-03 16:41:13,796 - __main__ - INFO - Processed relationships for 1000/3277 chunks
+2025-04-03 16:41:14,128 - __main__ - INFO - Processed relationships for 1100/3277 chunks
+2025-04-03 16:41:14,480 - __main__ - INFO - Processed relationships for 1200/3277 chunks
+2025-04-03 16:41:14,826 - __main__ - INFO - Processed relationships for 1300/3277 chunks
+2025-04-03 16:41:15,170 - __main__ - INFO - Processed relationships for 1400/3277 chunks
+2025-04-03 16:41:15,499 - __main__ - INFO - Processed relationships for 1500/3277 chunks
+2025-04-03 16:41:15,800 - __main__ - INFO - Processed relationships for 1600/3277 chunks
+2025-04-03 16:41:16,121 - __main__ - INFO - Processed relationships for 1700/3277 chunks
+2025-04-03 16:41:16,436 - __main__ - INFO - Processed relationships for 1800/3277 chunks
+2025-04-03 16:41:16,767 - __main__ - INFO - Processed relationships for 1900/3277 chunks
+2025-04-03 16:41:17,086 - __main__ - INFO - Processed relationships for 2000/3277 chunks
+2025-04-03 16:41:17,405 - __main__ - INFO - Processed relationships for 2100/3277 chunks
+2025-04-03 16:41:17,724 - __main__ - INFO - Processed relationships for 2200/3277 chunks
+2025-04-03 16:41:18,079 - __main__ - INFO - Processed relationships for 2300/3277 chunks
+2025-04-03 16:41:18,398 - __main__ - INFO - Processed relationships for 2400/3277 chunks
+2025-04-03 16:41:18,746 - __main__ - INFO - Processed relationships for 2500/3277 chunks
+2025-04-03 16:41:19,087 - __main__ - INFO - Processed relationships for 2600/3277 chunks
+2025-04-03 16:41:19,469 - __main__ - INFO - Processed relationships for 2700/3277 chunks
+2025-04-03 16:41:19,812 - __main__ - INFO - Processed relationships for 2800/3277 chunks
+2025-04-03 16:41:20,146 - __main__ - INFO - Processed relationships for 2900/3277 chunks
+2025-04-03 16:41:20,491 - __main__ - INFO - Processed relationships for 3000/3277 chunks
+2025-04-03 16:41:20,842 - __main__ - INFO - Processed relationships for 3100/3277 chunks
+2025-04-03 16:41:21,163 - __main__ - INFO - Processed relationships for 3200/3277 chunks
+2025-04-03 16:41:21,429 - __main__ - INFO - Processed relationships for 3277/3277 chunks
+2025-04-03 16:41:21,430 - __main__ - INFO - Marking priority chunks
+2025-04-03 16:41:21,465 - __main__ - INFO - Marked 2438 priority chunks out of 3277
+2025-04-03 16:41:21,465 - __main__ - INFO - Storing enhanced metadata to data/enhanced_chunks.json
+2025-04-03 16:41:21,533 - __main__ - INFO - Stored 3277 enhanced chunks
+2025-04-03 16:41:21,534 - __main__ - INFO - Documentation processing complete
+2025-04-03 16:41:21,536 - __main__ - INFO - Preprocessing completed successfully
+2025-04-03 16:45:16,102 - __main__ - INFO - Processing documentation from data/developer-docs
+2025-04-03 16:45:16,153 - __main__ - INFO - Processed 50 files, found 597 chunks
+2025-04-03 16:45:16,164 - __main__ - INFO - Processed 100 files, found 852 chunks
+2025-04-03 16:45:16,175 - __main__ - INFO - Processed 150 files, found 1196 chunks
+2025-04-03 16:45:16,185 - __main__ - INFO - Processed 200 files, found 1560 chunks
+2025-04-03 16:45:16,196 - __main__ - INFO - Processed 250 files, found 1839 chunks
+2025-04-03 16:45:16,208 - __main__ - INFO - Processed 300 files, found 2169 chunks
+2025-04-03 16:45:16,220 - __main__ - INFO - Processed 350 files, found 2564 chunks
+2025-04-03 16:45:16,234 - __main__ - INFO - Processed 400 files, found 2977 chunks
+2025-04-03 16:45:16,244 - __main__ - INFO - Processed 448 files, found 3277 chunks
+2025-04-03 16:45:16,244 - __main__ - INFO - Analyzing topic relationships for 3277 chunks
+2025-04-03 16:45:17,507 - __main__ - INFO - Extracted topics for 3264 chunks
+2025-04-03 16:45:17,823 - __main__ - INFO - Processed relationships for 100/3277 chunks
+2025-04-03 16:45:18,140 - __main__ - INFO - Processed relationships for 200/3277 chunks
+2025-04-03 16:45:18,467 - __main__ - INFO - Processed relationships for 300/3277 chunks
+2025-04-03 16:45:18,786 - __main__ - INFO - Processed relationships for 400/3277 chunks
+2025-04-03 16:45:19,062 - __main__ - INFO - Processed relationships for 500/3277 chunks
+2025-04-03 16:45:19,319 - __main__ - INFO - Processed relationships for 600/3277 chunks
+2025-04-03 16:45:19,583 - __main__ - INFO - Processed relationships for 700/3277 chunks
+2025-04-03 16:45:19,862 - __main__ - INFO - Processed relationships for 800/3277 chunks
+2025-04-03 16:45:20,146 - __main__ - INFO - Processed relationships for 900/3277 chunks
+2025-04-03 16:45:20,475 - __main__ - INFO - Processed relationships for 1000/3277 chunks
+2025-04-03 16:45:20,795 - __main__ - INFO - Processed relationships for 1100/3277 chunks
+2025-04-03 16:45:21,147 - __main__ - INFO - Processed relationships for 1200/3277 chunks
+2025-04-03 16:45:21,485 - __main__ - INFO - Processed relationships for 1300/3277 chunks
+2025-04-03 16:45:21,833 - __main__ - INFO - Processed relationships for 1400/3277 chunks
+2025-04-03 16:45:22,161 - __main__ - INFO - Processed relationships for 1500/3277 chunks
+2025-04-03 16:45:22,463 - __main__ - INFO - Processed relationships for 1600/3277 chunks
+2025-04-03 16:45:22,797 - __main__ - INFO - Processed relationships for 1700/3277 chunks
+2025-04-03 16:45:23,125 - __main__ - INFO - Processed relationships for 1800/3277 chunks
+2025-04-03 16:45:23,467 - __main__ - INFO - Processed relationships for 1900/3277 chunks
+2025-04-03 16:45:23,837 - __main__ - INFO - Processed relationships for 2000/3277 chunks
+2025-04-03 16:45:24,167 - __main__ - INFO - Processed relationships for 2100/3277 chunks
+2025-04-03 16:45:24,491 - __main__ - INFO - Processed relationships for 2200/3277 chunks
+2025-04-03 16:45:24,919 - __main__ - INFO - Processed relationships for 2300/3277 chunks
+2025-04-03 16:45:25,242 - __main__ - INFO - Processed relationships for 2400/3277 chunks
+2025-04-03 16:45:25,582 - __main__ - INFO - Processed relationships for 2500/3277 chunks
+2025-04-03 16:45:25,921 - __main__ - INFO - Processed relationships for 2600/3277 chunks
+2025-04-03 16:45:26,287 - __main__ - INFO - Processed relationships for 2700/3277 chunks
+2025-04-03 16:45:26,658 - __main__ - INFO - Processed relationships for 2800/3277 chunks
+2025-04-03 16:45:27,004 - __main__ - INFO - Processed relationships for 2900/3277 chunks
+2025-04-03 16:45:27,351 - __main__ - INFO - Processed relationships for 3000/3277 chunks
+2025-04-03 16:45:27,692 - __main__ - INFO - Processed relationships for 3100/3277 chunks
+2025-04-03 16:45:28,030 - __main__ - INFO - Processed relationships for 3200/3277 chunks
+2025-04-03 16:45:28,298 - __main__ - INFO - Processed relationships for 3277/3277 chunks
+2025-04-03 16:45:28,299 - __main__ - INFO - Marking priority chunks
+2025-04-03 16:45:28,335 - __main__ - INFO - Marked 2438 priority chunks out of 3277
+2025-04-03 16:45:28,335 - __main__ - INFO - Storing enhanced metadata to data/developer-docs/enhanced_chunks.json
+2025-04-03 16:45:28,408 - __main__ - INFO - Stored 3277 enhanced chunks
+2025-04-03 16:45:28,409 - __main__ - INFO - Documentation processing complete
+2025-04-03 16:45:28,410 - __main__ - INFO - Preprocessing completed successfully
