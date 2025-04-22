@@ -9,10 +9,26 @@ between document chunks, and stores enhanced metadata for use by the RAG system.
 import os
 import sys
 from pathlib import Path
+import time
 
 # Add the project root to Python path
 project_root = str(Path(__file__).parent.parent.absolute())
 sys.path.insert(0, project_root)
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Load from .env file
+    env_path = os.path.join(project_root, '.env')
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
+        print(f"Loaded environment variables from {env_path}")
+        print(f"OPENAI_API_KEY exists: {os.getenv('OPENAI_API_KEY') is not None}")
+        print(f"CHAT_TEST_MODE: {os.getenv('CHAT_TEST_MODE')}")
+    else:
+        print(f"Warning: .env file not found at {env_path}")
+except ImportError:
+    print("dotenv package not found. Environment variables may not be properly loaded.")
 
 import json
 import logging
@@ -116,6 +132,7 @@ def process_markdown_document(content: str, file_path: str = "") -> List[Documen
     Returns:
         List of Document objects with hierarchical metadata
     """
+    logger.info(f"Processing markdown document: {file_path}")
     try:
         # Get normalized path and URL from registry
         normalized_path = path_registry.register_file(file_path)
@@ -416,71 +433,183 @@ def save_enhanced_chunks(
 
 def process_documentation(
     docs_dir: str,
-) -> Tuple[List[Document], Dict[str, List[Dict[str, Any]]]]:
+    output_path: str = None,
+) -> List[Dict[str, Any]]:
     """
     Process documentation files and extract chunks with relationships.
 
     Args:
         docs_dir: Path to the documentation directory
+        output_path: Path to store the enhanced data (optional)
 
     Returns:
-        Tuple of (list of chunks, dictionary of relationships)
+        List of enhanced chunks
     """
     chunks = []
     relationships = defaultdict(list)
 
     try:
         # Walk through the documentation directory
+        total_files = sum(1 for root, _, files in os.walk(docs_dir) 
+                         for file in files if file.endswith((".mdx", ".md")))
+        processed_files = 0
+        
+        logger.info(f"Found {total_files} markdown files to process in {docs_dir}")
+        
         for root, _, files in os.walk(docs_dir):
             for file in files:
                 if file.endswith(".mdx") or file.endswith(".md"):
                     file_path = os.path.join(root, file)
+                    processed_files += 1
                     try:
+                        logger.info(f"Processing file {processed_files}/{total_files}: {file_path}")
                         with open(file_path, "r", encoding="utf-8") as f:
                             content = f.read()
 
                         # Process the markdown document
                         doc_chunks = process_markdown_document(content, file_path)
                         chunks.extend(doc_chunks)
+                        
+                        if processed_files % 10 == 0:
+                            logger.info(f"Progress: {processed_files}/{total_files} files ({(processed_files/total_files)*100:.1f}%)")
+                            
                     except Exception as e:
                         logger.error(f"Error processing file {file_path}: {e}")
                         continue
 
         total_chunks = len(chunks)
+        logger.info(f"Created {total_chunks} chunks from {processed_files} files")
 
         # Create relationships between chunks
+        logger.info(f"Starting relationship calculation for {total_chunks} chunks...")
+        chunk_count = 0
+        comparison_count = 0
+        start_time = time.time()
+        
         for i, chunk in enumerate(chunks):
+            if i % 10 == 0:
+                current_time = time.time()
+                elapsed_time = current_time - start_time
+                logger.info(f"Calculating relationships: chunk {i}/{total_chunks} ({i/total_chunks*100:.1f}%)")
+                if i > 0:
+                    avg_time_per_chunk = elapsed_time / i
+                    remaining_chunks = total_chunks - i
+                    est_remaining_time = avg_time_per_chunk * remaining_chunks
+                    logger.info(f"Estimated remaining time: {est_remaining_time:.1f} seconds ({est_remaining_time/60:.1f} minutes)")
+            
             chunk_id = chunk.metadata.get("chunk_id", str(i))
             chunk_content = chunk.page_content.lower()
-
+            
+            # Skip very long content to avoid excessive processing
+            if len(chunk_content) > 10000:
+                logger.warning(f"Skipping very long chunk {i} with {len(chunk_content)} characters")
+                continue
+                
+            # Add counters to log progress within each chunk
+            comparisons_for_this_chunk = 0
+            
             # Compare with other chunks
             for j, other_chunk in enumerate(chunks):
                 if i == j:
                     continue
+                
+                comparisons_for_this_chunk += 1
+                comparison_count += 1
+                
+                # Log progress within a chunk
+                if comparisons_for_this_chunk % 1000 == 0:
+                    logger.info(f"  - Made {comparisons_for_this_chunk} comparisons for chunk {i}")
 
                 other_id = other_chunk.metadata.get("chunk_id", str(j))
                 other_content = other_chunk.page_content.lower()
 
+                # Skip very long comparison content
+                if len(other_content) > 10000:
+                    continue
+                    
                 # Calculate similarity (simple keyword overlap for now)
-                chunk_words = set(word_tokenize(chunk_content))
-                other_words = set(word_tokenize(other_content))
-                common_words = chunk_words.intersection(other_words)
+                try:
+                    chunk_words = set(word_tokenize(chunk_content))
+                    other_words = set(word_tokenize(other_content))
+                    common_words = chunk_words.intersection(other_words)
 
-                if len(common_words) > 0:
-                    similarity = len(common_words) / max(
-                        len(chunk_words), len(other_words)
-                    )
-
-                    if similarity >= SIMILARITY_THRESHOLD:
-                        relationships[chunk_id].append(
-                            {"chunk_id": other_id, "similarity": similarity}
+                    if len(common_words) > 0:
+                        similarity = len(common_words) / max(
+                            len(chunk_words), len(other_words)
                         )
 
-        return chunks, relationships
+                        if similarity >= SIMILARITY_THRESHOLD:
+                            relationships[chunk_id].append(
+                                {"chunk_id": other_id, "similarity": similarity}
+                            )
+                except Exception as e:
+                    logger.error(f"Error calculating similarity between chunks {i} and {j}: {e}")
+            
+            # Log the results for this chunk
+            logger.info(f"  Found {len(relationships.get(chunk_id, []))} relationships for chunk {i}")
+            
+            # Limit the number of related chunks per chunk
+            if len(relationships.get(chunk_id, [])) > MAX_RELATED_CHUNKS:
+                # Sort by similarity (descending) and take the top MAX_RELATED_CHUNKS
+                relationships[chunk_id] = sorted(
+                    relationships[chunk_id], 
+                    key=lambda x: x["similarity"], 
+                    reverse=True
+                )[:MAX_RELATED_CHUNKS]
+            
+            chunk_count += 1
+
+        end_time = time.time()
+        total_time = end_time - start_time
+        logger.info(f"Finished relationship calculation in {total_time:.2f} seconds")
+        logger.info(f"Processed {chunk_count} chunks with {comparison_count} comparisons")
+        logger.info(f"Found {sum(len(rel) for rel in relationships.values())} relationships total")
+
+        # Add a check to limit the total processing time for relationships
+        if total_time > 300:  # 5 minutes max
+            logger.warning("Relationship calculation took too long, limiting relationships")
+            # Trim relationships to only keep the strongest ones
+            for chunk_id in relationships:
+                if len(relationships[chunk_id]) > 5:
+                    relationships[chunk_id] = sorted(
+                        relationships[chunk_id], 
+                        key=lambda x: x["similarity"], 
+                        reverse=True
+                    )[:5]
+        
+        # Process enhanced chunks if output path is provided
+        if output_path:
+            logger.info(f"Writing enhanced chunks to {output_path}")
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            # Since we can't use asyncio.run() within an event loop,
+            # we'll just store the raw chunks and let the caller handle processing
+            enhanced_chunks = []
+            
+            for i, chunk in enumerate(chunks):
+                chunk_id = chunk.metadata.get("chunk_id", str(i))
+                enhanced_chunks.append({
+                    "id": chunk_id,
+                    "content": chunk.page_content,
+                    "metadata": {
+                        **chunk.metadata,
+                        "related_topics": [r["chunk_id"] for r in relationships.get(chunk_id, [])],
+                        "topic_similarity_scores": {r["chunk_id"]: r["similarity"] for r in relationships.get(chunk_id, [])}
+                    }
+                })
+            
+            # Save to output path
+            with open(output_path, "w") as f:
+                json.dump(enhanced_chunks, f)
+                
+            return enhanced_chunks
+        
+        return chunks
 
     except Exception as e:
         logger.error(f"Error processing documentation: {e}")
-        return [], {}
+        return [] if output_path else []
 
 
 async def process_all_chunks_with_metadata(
@@ -619,24 +748,71 @@ async def main_async():
     )
     args = parser.parse_args()
 
-    # Process documentation
-    chunks, relationships = process_documentation(args.docs_dir)
-
-    # Store enhanced metadata with parallel processing
-    await store_enhanced_metadata_async(
-        chunks, relationships, args.output, batch_size=args.batch_size
-    )
-
-    # Also save in the provider-specific location
-    save_enhanced_chunks(chunks)
+    # Process documentation - get either enhanced chunks or raw chunks + relationships
+    if args.output:
+        # Process the documentation
+        logger.info(f"Processing documentation from {args.docs_dir}")
+        enhanced_chunks = process_documentation(docs_dir=args.docs_dir, output_path=args.output)
+        
+        # Process the chunks to add code summaries
+        logger.info("Processing chunks to add code summaries")
+        # First convert enhanced_chunks to Document objects
+        documents = []
+        for chunk in enhanced_chunks:
+            # Check if the chunk contains code
+            contains_code = "```" in chunk["content"]
+            
+            doc = Document(
+                page_content=chunk["content"],
+                metadata={
+                    **chunk["metadata"],
+                    "chunk_id": chunk["id"],
+                    "title": chunk["metadata"].get("title", ""),
+                    "parent_title": chunk["metadata"].get("parent_title", ""),
+                    "contains_code": contains_code,
+                },
+            )
+            documents.append(doc)
+        
+        # Process code summaries
+        logger.info(f"Processing code summaries for {len(documents)} documents")
+        enhanced_chunks_with_summaries = await process_all_chunks_with_metadata(documents, args.batch_size)
+        
+        # Save the enhanced chunks with summaries
+        logger.info(f"Saving enhanced chunks with code summaries to {args.output}")
+        with open(args.output, "w") as f:
+            json.dump(enhanced_chunks_with_summaries, f)
+            
+        # Also save to provider-specific location
+        output_dir = f"data/generated/{DEFAULT_PROVIDER}"
+        output_file = os.path.join(output_dir, "enhanced_chunks.json")
+        os.makedirs(output_dir, exist_ok=True)
+        logger.info(f"Saving enhanced chunks with code summaries to {output_file}")
+        if args.output != output_file:
+            with open(output_file, "w") as f:
+                json.dump(enhanced_chunks_with_summaries, f)
+                
+    else:
+        # Without output_path, it returns chunks and we need to process them
+        chunks, relationships = process_documentation(args.docs_dir)
+        # Store enhanced metadata with parallel processing
+        await store_enhanced_metadata_async(
+            chunks, relationships, args.output, batch_size=args.batch_size
+        )
+        # Also save in the provider-specific location
+        save_enhanced_chunks(chunks)
 
     logger.info("Preprocessing completed successfully")
 
 
 def main():
     """Main entry point for the script."""
+    logger.info("Starting preprocessing with topic-based chunking")
     # Run the async main function
+    start_time = time.time()
     asyncio.run(main_async())
+    end_time = time.time()
+    logger.info(f"Preprocessing completed in {end_time - start_time:.2f} seconds")
 
 
 async def generate_code_summary(
@@ -654,14 +830,21 @@ async def generate_code_summary(
         A natural language summary of the code
     """
     # Check if we're in test mode - if so, generate a simple summary
-    if os.getenv("OPENAI_API_KEY") is None or TEST_MODE:
+    if os.getenv("OPENAI_API_KEY") is None:
+        logger.warning("Skipping code summary generation: OPENAI_API_KEY not found")
+        return f"Code example for {block_title or parent_title or 'this section'}"
+    elif TEST_MODE:
+        logger.warning("Skipping code summary generation: TEST_MODE is enabled")
         return f"Code example for {block_title or parent_title or 'this section'}"
 
+    logger.info(f"Generating code summary for '{block_title or parent_title or 'code block'}'")
+    
     try:
         import openai
 
         # Set API key
         openai.api_key = os.getenv("OPENAI_API_KEY")
+        logger.debug(f"Using OpenAI API key: {openai.api_key[:5]}...{openai.api_key[-4:]}")
 
         # Create a clean version of the code for the prompt
         # Extract code block content
@@ -700,10 +883,11 @@ async def generate_code_summary(
 
         # Use asyncio to prevent blocking
         loop = asyncio.get_event_loop()
+        logger.info(f"Sending code summary request to OpenAI")
         response = await loop.run_in_executor(
             None,
             lambda: openai.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o",
                 messages=[
                     {
                         "role": "system",
@@ -718,6 +902,7 @@ async def generate_code_summary(
 
         # Extract and return the summary
         summary = response.choices[0].message.content.strip()
+        logger.info(f"Generated summary: {summary[:50]}...")
         return summary
 
     except Exception as e:

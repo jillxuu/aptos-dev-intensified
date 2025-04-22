@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 ENHANCED_CHUNKS_PATH = "data/enhanced_chunks.json"
 SIMILARITY_THRESHOLD = 0.7  # Minimum similarity score to include in results
-MAX_CHUNKS_TO_RETURN = 5  # Maximum number of chunks to return
+MAX_CHUNKS_TO_RETURN = 10  # Maximum number of chunks to return
 
 
 async def load_enhanced_chunks(
@@ -77,13 +77,22 @@ async def initialize_vector_store(
 
         # Convert enhanced chunks to Documents with enhanced embedding text
         documents = []
+        chunks_missing_summaries = 0
+        
         for chunk in enhanced_chunks:
+            # Check if this is a code block - either by contains_code flag or by checking for code markers
+            is_code_block = chunk["metadata"].get("contains_code", False) or "```" in chunk["content"]
+            
             # For code blocks, create a combined representation that includes the summary
-            if chunk["metadata"].get("contains_code", True) and chunk["metadata"].get(
-                "code_summary"
-            ):
+            if is_code_block:
                 # Get metadata for context
                 code_summary = chunk["metadata"].get("code_summary", "")
+                
+                # If no code summary exists or it's empty, log a warning
+                if not code_summary:
+                    chunks_missing_summaries += 1
+                    logger.warning(f"Code block chunk {chunk['id']} is missing a code summary")
+                
                 parent_title = chunk["metadata"].get("parent_title", "")
                 title = chunk["metadata"].get("title", "")
                 code_languages = ", ".join(chunk["metadata"].get("code_languages", []))
@@ -109,6 +118,7 @@ async def initialize_vector_store(
                         ],  # Keep original id for backward compatibility
                         "original_content": chunk["content"],
                         "is_enhanced_embedding": True,
+                        "contains_code": True,  # Ensure this is marked as a code block
                     },
                 )
             else:
@@ -125,6 +135,9 @@ async def initialize_vector_store(
                 )
 
             documents.append(doc)
+            
+        if chunks_missing_summaries > 0:
+            logger.warning(f"Found {chunks_missing_summaries} code blocks missing summaries out of {len(enhanced_chunks)} total chunks")
 
         # Initialize embeddings with text-embedding-3-large model
         embeddings = OpenAIEmbeddings(

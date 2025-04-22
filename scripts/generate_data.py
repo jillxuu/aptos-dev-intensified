@@ -8,12 +8,14 @@ import logging
 import yaml
 from typing import List, Dict, Any
 from pathlib import Path
+import time
 
 # Add the app directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.config import (
     PROVIDER_TYPES,
+    provider_types_list,
     get_generated_data_path,
     get_content_path,
     get_vector_store_path,
@@ -71,34 +73,51 @@ async def generate_provider_data(provider: str) -> None:
         # Create generated data directory
         generated_dir = get_generated_data_path(provider)
         os.makedirs(generated_dir, exist_ok=True)
+        logger.info(f"Starting data generation for provider: {provider}")
+        logger.info(f"Generated data directory: {generated_dir}")
 
         # 1. Generate URL mappings
         docs_dir = os.path.join(get_content_path(provider), "apps/nextra/pages")
         if not os.path.exists(docs_dir):
             docs_dir = get_content_path(provider)  # Fallback to base content path
         url_mappings_file = os.path.join(generated_dir, "url_mappings.yaml")
-
+        
+        logger.info(f"Generating URL mappings from docs directory: {docs_dir}")
         mappings, redirects = await generate_mappings(docs_dir)
 
         # Save URL mappings
         os.makedirs(os.path.dirname(url_mappings_file), exist_ok=True)
+        logger.info(f"Saving URL mappings to: {url_mappings_file}")
         with open(url_mappings_file, "w") as f:
             yaml.safe_dump(
                 {"mappings": mappings, "redirects": redirects},
                 f,
                 default_flow_style=False,
             )
+        logger.info(f"Saved {len(mappings)} URL mappings")
 
         # 2. Generate enhanced chunks
         enhanced_chunks_file = os.path.join(generated_dir, "enhanced_chunks.json")
+        logger.info(f"Generating enhanced chunks from docs directory: {docs_dir}")
+        logger.info(f"Enhanced chunks will be saved to: {enhanced_chunks_file}")
+        
+        start_time = time.time()
         enhanced_chunks = process_documentation(
             docs_dir=docs_dir,  # Use the same docs_dir as URL mappings
             output_path=enhanced_chunks_file,
         )
+        end_time = time.time()
+        logger.info(f"Enhanced chunks generation completed in {end_time - start_time:.2f} seconds")
+        logger.info(f"Generated {len(enhanced_chunks)} enhanced chunks")
 
         # 3. Initialize and save vector store
         vector_store_path = get_vector_store_path(provider)
+        logger.info(f"Initializing vector store at: {vector_store_path}")
+        start_time = time.time()
         initialize_vector_store(enhanced_chunks, vector_store_path)
+        end_time = time.time()
+        logger.info(f"Vector store creation completed in {end_time - start_time:.2f} seconds")
+        logger.info(f"Data generation for provider {provider} completed successfully")
 
     except Exception as e:
         logger.error(f"Error generating data for {provider}: {e}")
@@ -107,7 +126,7 @@ async def generate_provider_data(provider: str) -> None:
 
 async def generate_all_data() -> None:
     """Generate all necessary data for all providers."""
-    for provider in PROVIDER_TYPES.__args__:
+    for provider in provider_types_list:
         await generate_provider_data(provider)
 
 
@@ -115,11 +134,17 @@ def main():
     """Main entry point."""
     try:
         # Create necessary directories
-        for provider in PROVIDER_TYPES.__args__:
+        logger.info("Starting data generation process")
+        start_time = time.time()
+        
+        for provider in provider_types_list:
             os.makedirs(get_generated_data_path(provider), exist_ok=True)
-
+        
         # Run data generation
         asyncio.run(generate_all_data())
+        
+        end_time = time.time()
+        logger.info(f"All data generation completed in {end_time - start_time:.2f} seconds")
 
     except Exception as e:
         logger.error(f"Error during data generation: {e}")

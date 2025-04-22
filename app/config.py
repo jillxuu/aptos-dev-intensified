@@ -1,11 +1,13 @@
 """Configuration settings for the application."""
 
 import os
-from typing import Dict, Literal
+from typing import Dict, Literal, get_args
 
 # Documentation provider types
+provider_types_env = os.getenv("PROVIDER_TYPES", "developer-docs")
+provider_types_list = [p.strip() for p in provider_types_env.split(",")]
 PROVIDER_TYPES = Literal["developer-docs", "aptos-learn"]
-DEFAULT_PROVIDER = os.getenv("DEFAULT_PROVIDER", "developer-docs")
+DEFAULT_PROVIDER = os.getenv("DEFAULT_RAG_PROVIDER", "developer-docs")
 
 # Base paths for different documentation sources
 DOC_BASE_PATHS: Dict[str, str] = {

@@ -44,7 +44,7 @@ embeddings_model = OpenAIEmbeddings(
 # Initialize chat model
 chat_model = ChatOpenAI(
     model_name="gpt-4o",
-    temperature=0.5,
+    temperature=0.1,
     openai_api_key=os.getenv("OPENAI_API_KEY"),
     streaming=True,
 )
@@ -525,7 +525,7 @@ async def generate_ai_response(
         context_retrieval_start = datetime.now()
         logger.info("[RAG] Retrieving relevant context...")
         context_chunks = await rag_provider_obj.get_relevant_context(
-            message, k=3, include_series=is_process_query, provider_type=provider_name
+            message, k=7, include_series=is_process_query, provider_type=provider_name
         )
         context_retrieval_time = (
             datetime.now() - context_retrieval_start

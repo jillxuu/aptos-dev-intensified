@@ -61,7 +61,7 @@ except LookupError:
 
 # Track vector store state
 VECTOR_STORE_STATE_FILE = os.path.join(
-    get_generated_data_path(DEFAULT_PROVIDER), "vector_store_state.json"
+    get_generated_data_path("developer-docs"), "vector_store_state.json"
 )
 
 
@@ -172,7 +172,7 @@ def save_vector_store_state(state):
 
 
 def rerank_documents(
-    query: str, documents: List[Dict[str, Any]], top_n: int = 5
+    query: str, documents: List[Dict[str, Any]], top_n: int = 7
 ) -> List[Dict[str, Any]]:
     """
     Rerank documents using Cohere's reranking model.
@@ -776,7 +776,7 @@ async def initialize_models():
 
 
 def get_relevant_context(
-    query: str, k: int = 5, include_series: bool = True
+    query: str, k: int = 7, include_series: bool = True
 ) -> List[Dict[str, str]]:
     """
     Get relevant context from the documentation using a hybrid retrieval approach.
