@@ -43,7 +43,7 @@ embeddings_model = OpenAIEmbeddings(
 
 # Initialize chat model
 chat_model = ChatOpenAI(
-    model_name="gpt-4o",
+    model_name="gpt-4.1",
     temperature=0.1,
     openai_api_key=os.getenv("OPENAI_API_KEY"),
     streaming=True,
@@ -68,7 +68,7 @@ When answering developer questions:
    - Never hallucinate features, functions, or capabilities not explicitly mentioned in the documentation
    - If multiple documents contain relevant information, synthesize them into a coherent answer
    - If the retrieved context doesn't contain relevant information to the question:
-     * Clearly state that the current documentation chunks don't address the question
+     * Clearly state that the retrieved relevant documentation doesn't address the question
      * Don't attempt to answer with information not present in the context
      * Suggest possible alternative search terms the user might try
      * Recommend relevant sections of documentation that might contain the answer
@@ -85,6 +85,7 @@ When answering developer questions:
    - Use exact section titles and page numbers when available
    - Format citations like: [Document Title](full_url_to_document)
    - For multiple sources, list them at the end of your answer
+   - Only reference external resources that are explicitly mentioned in the Aptos documentation
 
 4. TECHNICAL PRECISION:
    - Use exact technical terminology from the Aptos documentation
