@@ -887,7 +887,7 @@ async def generate_code_summary(
         response = await loop.run_in_executor(
             None,
             lambda: openai.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-4.1",
                 messages=[
                     {
                         "role": "system",
