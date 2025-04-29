@@ -81,7 +81,7 @@ async def generate_provider_data(provider: str) -> None:
         if not os.path.exists(docs_dir):
             docs_dir = get_content_path(provider)  # Fallback to base content path
         url_mappings_file = os.path.join(generated_dir, "url_mappings.yaml")
-        
+
         logger.info(f"Generating URL mappings from docs directory: {docs_dir}")
         mappings, redirects = await generate_mappings(docs_dir)
 
@@ -100,14 +100,16 @@ async def generate_provider_data(provider: str) -> None:
         enhanced_chunks_file = os.path.join(generated_dir, "enhanced_chunks.json")
         logger.info(f"Generating enhanced chunks from docs directory: {docs_dir}")
         logger.info(f"Enhanced chunks will be saved to: {enhanced_chunks_file}")
-        
+
         start_time = time.time()
         enhanced_chunks = process_documentation(
             docs_dir=docs_dir,  # Use the same docs_dir as URL mappings
             output_path=enhanced_chunks_file,
         )
         end_time = time.time()
-        logger.info(f"Enhanced chunks generation completed in {end_time - start_time:.2f} seconds")
+        logger.info(
+            f"Enhanced chunks generation completed in {end_time - start_time:.2f} seconds"
+        )
         logger.info(f"Generated {len(enhanced_chunks)} enhanced chunks")
 
         # 3. Initialize and save vector store
@@ -116,7 +118,9 @@ async def generate_provider_data(provider: str) -> None:
         start_time = time.time()
         initialize_vector_store(enhanced_chunks, vector_store_path)
         end_time = time.time()
-        logger.info(f"Vector store creation completed in {end_time - start_time:.2f} seconds")
+        logger.info(
+            f"Vector store creation completed in {end_time - start_time:.2f} seconds"
+        )
         logger.info(f"Data generation for provider {provider} completed successfully")
 
     except Exception as e:
@@ -136,15 +140,17 @@ def main():
         # Create necessary directories
         logger.info("Starting data generation process")
         start_time = time.time()
-        
+
         for provider in provider_types_list:
             os.makedirs(get_generated_data_path(provider), exist_ok=True)
-        
+
         # Run data generation
         asyncio.run(generate_all_data())
-        
+
         end_time = time.time()
-        logger.info(f"All data generation completed in {end_time - start_time:.2f} seconds")
+        logger.info(
+            f"All data generation completed in {end_time - start_time:.2f} seconds"
+        )
 
     except Exception as e:
         logger.error(f"Error during data generation: {e}")

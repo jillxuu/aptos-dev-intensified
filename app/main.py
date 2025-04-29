@@ -231,21 +231,25 @@ async def check_required_data(provider: str) -> bool:
     """Check if required data exists for a provider."""
     generated_dir = get_generated_data_path(provider)
     vector_store_dir = os.path.join(generated_dir, "vector_store")
-    
+
     required_files = [
         os.path.join(generated_dir, "url_mappings.yaml"),
         os.path.join(generated_dir, "enhanced_chunks.json"),
-        os.path.join(vector_store_dir, "index.faiss"),  # Check for the actual index file
-        os.path.join(vector_store_dir, "index.pkl"),    # Check for the pickle file
+        os.path.join(
+            vector_store_dir, "index.faiss"
+        ),  # Check for the actual index file
+        os.path.join(vector_store_dir, "index.pkl"),  # Check for the pickle file
     ]
-    
+
     # Check if all required files exist
     all_exist = all(os.path.exists(path) for path in required_files)
-    
+
     if not all_exist:
-        logger.info(f"Missing required files for {provider}: " + 
-                   ", ".join([path for path in required_files if not os.path.exists(path)]))
-    
+        logger.info(
+            f"Missing required files for {provider}: "
+            + ", ".join([path for path in required_files if not os.path.exists(path)])
+        )
+
     return all_exist
 
 
@@ -265,20 +269,23 @@ async def async_init_models():
                 logger.info(f"Required data missing for {provider}, generating...")
                 try:
                     from scripts.generate_data import generate_provider_data
+
                     await generate_provider_data(provider)
                 except Exception as e:
                     logger.error(f"Failed to generate data for {provider}: {e}")
                     continue  # Skip to next provider
             else:
                 logger.info(f"Required data exists for {provider}")
-                
+
             # Only initialize the provider if it's in the list of requested providers
             if provider == DEFAULT_PROVIDER:
                 logger.info(f"Initializing docs provider with path: {provider}")
                 await docs_provider.initialize({"docs_path": provider})
                 logger.info(f"Successfully initialized {provider} provider")
         except Exception as e:
-            logger.warning(f"Failed to process provider {provider}, continuing with others: {e}")
+            logger.warning(
+                f"Failed to process provider {provider}, continuing with others: {e}"
+            )
 
 
 @app.on_event("startup")

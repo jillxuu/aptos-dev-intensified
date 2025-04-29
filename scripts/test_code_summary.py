@@ -13,7 +13,8 @@ sys.path.insert(0, project_root)
 
 # Load environment variables from .env file
 from dotenv import load_dotenv
-env_path = os.path.join(project_root, '.env')
+
+env_path = os.path.join(project_root, ".env")
 load_dotenv(env_path)
 print(f"Loaded environment variables from {env_path}")
 print(f"OPENAI_API_KEY exists: {os.getenv('OPENAI_API_KEY') is not None}")
@@ -57,21 +58,24 @@ module 0x1::hello_world {
 }
 ```"""
 
+
 async def test_code_summary():
     """Test the code summary generation function."""
     logger.info("Testing code summary generation")
-    
+
     # Test with valid OpenAI API key
     summary = await generate_code_summary(
-        CODE_BLOCK, 
-        parent_title="Move Smart Contracts", 
-        block_title="Hello World Example"
+        CODE_BLOCK,
+        parent_title="Move Smart Contracts",
+        block_title="Hello World Example",
     )
     logger.info(f"Generated summary: {summary}")
+
 
 def main():
     """Main entry point."""
     asyncio.run(test_code_summary())
 
+
 if __name__ == "__main__":
-    main() 
+    main()

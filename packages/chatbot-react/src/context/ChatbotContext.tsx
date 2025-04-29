@@ -181,6 +181,17 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
           role: 'user',
           timestamp: new Date().toISOString(),
         };
+
+        // If no current chat, create one first
+        let chatId = currentChatId;
+        if (!chatId) {
+          const newChat = await clientRef.current.createChat();
+          chatId = newChat.id;
+          setCurrentChatId(chatId);
+          await loadChats();
+        }
+
+        // Add user message to the current chat
         setMessages(prev => [...prev, message]);
 
         // Create a new abort controller for this request
@@ -197,19 +208,10 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
         setMessages(prev => [...prev, assistantMessage]);
 
         // Send message and get streaming response
-        const response = await clientRef.current.sendMessage(currentChatId, content, {
+        const response = await clientRef.current.sendMessage(chatId, content, {
           messageId,
           signal: abortController.signal,
         });
-
-        // Extract chat ID from response headers
-        const headerChatId = response.headers.get('X-Chat-ID');
-        if (headerChatId && !currentChatId) {
-          setCurrentChatId(headerChatId);
-
-          // Load updated chat list from backend only when a new chat is created
-          await loadChats();
-        }
 
         // Process streaming response
         if (response.body) {
@@ -234,8 +236,7 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
             });
           }
 
-          // After message is fully processed, refresh the entire chat list
-          // to ensure we have the latest state from the backend
+          // After message is fully processed, refresh the chat list
           await loadChats();
         }
       } catch (err) {

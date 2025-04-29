@@ -78,21 +78,26 @@ async def initialize_vector_store(
         # Convert enhanced chunks to Documents with enhanced embedding text
         documents = []
         chunks_missing_summaries = 0
-        
+
         for chunk in enhanced_chunks:
             # Check if this is a code block - either by contains_code flag or by checking for code markers
-            is_code_block = chunk["metadata"].get("contains_code", False) or "```" in chunk["content"]
-            
+            is_code_block = (
+                chunk["metadata"].get("contains_code", False)
+                or "```" in chunk["content"]
+            )
+
             # For code blocks, create a combined representation that includes the summary
             if is_code_block:
                 # Get metadata for context
                 code_summary = chunk["metadata"].get("code_summary", "")
-                
+
                 # If no code summary exists or it's empty, log a warning
                 if not code_summary:
                     chunks_missing_summaries += 1
-                    logger.warning(f"Code block chunk {chunk['id']} is missing a code summary")
-                
+                    logger.warning(
+                        f"Code block chunk {chunk['id']} is missing a code summary"
+                    )
+
                 parent_title = chunk["metadata"].get("parent_title", "")
                 title = chunk["metadata"].get("title", "")
                 code_languages = ", ".join(chunk["metadata"].get("code_languages", []))
@@ -135,9 +140,11 @@ async def initialize_vector_store(
                 )
 
             documents.append(doc)
-            
+
         if chunks_missing_summaries > 0:
-            logger.warning(f"Found {chunks_missing_summaries} code blocks missing summaries out of {len(enhanced_chunks)} total chunks")
+            logger.warning(
+                f"Found {chunks_missing_summaries} code blocks missing summaries out of {len(enhanced_chunks)} total chunks"
+            )
 
         # Initialize embeddings with text-embedding-3-large model
         embeddings = OpenAIEmbeddings(
