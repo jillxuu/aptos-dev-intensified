@@ -19,6 +19,7 @@ from app.rag_providers.docs_provider import docs_provider
 from app.config import (
     DEFAULT_PROVIDER,
     PROVIDER_TYPES,
+    provider_types_list,
     get_generated_data_path,
 )
 
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 logger.info("Application starting up")
 
 # Set default RAG provider environment variable
-default_provider = os.environ.get("DEFAULT_RAG_PROVIDER", "docs")
+default_provider = os.environ.get("DEFAULT_RAG_PROVIDER", "developer-docs")
 os.environ["DEFAULT_RAG_PROVIDER"] = default_provider
 logger.info(f"Default RAG provider set to: {default_provider}")
 
@@ -229,12 +230,27 @@ app.include_router(chat.router, prefix="/api", tags=["Chat"])
 async def check_required_data(provider: str) -> bool:
     """Check if required data exists for a provider."""
     generated_dir = get_generated_data_path(provider)
+    vector_store_dir = os.path.join(generated_dir, "vector_store")
+
     required_files = [
         os.path.join(generated_dir, "url_mappings.yaml"),
         os.path.join(generated_dir, "enhanced_chunks.json"),
-        os.path.join(generated_dir, "vector_store"),
+        os.path.join(
+            vector_store_dir, "index.faiss"
+        ),  # Check for the actual index file
+        os.path.join(vector_store_dir, "index.pkl"),  # Check for the pickle file
     ]
-    return all(os.path.exists(path) for path in required_files)
+
+    # Check if all required files exist
+    all_exist = all(os.path.exists(path) for path in required_files)
+
+    if not all_exist:
+        logger.info(
+            f"Missing required files for {provider}: "
+            + ", ".join([path for path in required_files if not os.path.exists(path)])
+        )
+
+    return all_exist
 
 
 async def async_init_models():
@@ -246,28 +262,30 @@ async def async_init_models():
     except Exception as e:
         logger.error(f"Error initializing models: {e}")
 
-    try:
-        # Check and generate required data for each provider
-        for provider in PROVIDER_TYPES.__args__:
+    # Process each provider independently
+    for provider in provider_types_list:
+        try:
             if not await check_required_data(provider):
                 logger.info(f"Required data missing for {provider}, generating...")
-                from scripts.generate_data import generate_provider_data
+                try:
+                    from scripts.generate_data import generate_provider_data
 
-                await generate_provider_data(provider)
+                    await generate_provider_data(provider)
+                except Exception as e:
+                    logger.error(f"Failed to generate data for {provider}: {e}")
+                    continue  # Skip to next provider
             else:
                 logger.info(f"Required data exists for {provider}")
 
-        # Initialize docs provider with default path
-        logger.info(f"Initializing docs provider with default path: {DEFAULT_PROVIDER}")
-        await docs_provider.initialize({"docs_path": DEFAULT_PROVIDER})
-        logger.info("Successfully initialized docs provider")
-
-        # Initialize aptos-learn provider
-        logger.info("Initializing aptos-learn provider")
-        await docs_provider.initialize({"docs_path": "aptos-learn"})
-        logger.info("Successfully initialized aptos-learn provider")
-    except Exception as e:
-        logger.error(f"Failed to initialize providers: {e}")
+            # Only initialize the provider if it's in the list of requested providers
+            if provider == DEFAULT_PROVIDER:
+                logger.info(f"Initializing docs provider with path: {provider}")
+                await docs_provider.initialize({"docs_path": provider})
+                logger.info(f"Successfully initialized {provider} provider")
+        except Exception as e:
+            logger.warning(
+                f"Failed to process provider {provider}, continuing with others: {e}"
+            )
 
 
 @app.on_event("startup")

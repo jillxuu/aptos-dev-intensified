@@ -91,17 +91,14 @@ export class ChatbotClient {
       throw new Error('Client ID not found. Please ensure it is set in config.');
     }
 
-    console.log('Config:', this.config);
-    console.log('ClientId:', clientId);
-
     const request = {
       content,
       client_id: clientId,
       role: 'user',
       temperature: 0.7,
-      rag_provider: this.config.ragProvider || 'developer-docs', // Default to developer-docs if not specified
+      rag_provider: this.config.ragProvider || 'developer-docs',
       ...(options?.messageId && { message_id: options.messageId }),
-      ...(chatId && chatId.startsWith('chat-') && { chat_id: chatId }),
+      ...(chatId && { chat_id: chatId }),
     };
 
     console.log('Sending request:', request);

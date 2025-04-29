@@ -62,7 +62,7 @@ def scan_docs_directory(docs_dir: str) -> List[str]:
     return markdown_files
 
 
-async def generate_mappings(docs_dir: str) -> Dict[str, str]:
+async def generate_mappings(docs_dir: str) -> Tuple[Dict[str, str], Dict[str, str]]:
     """Generate comprehensive URL mappings for English content."""
     # Get all English markdown files
     markdown_files = scan_docs_directory(docs_dir)
@@ -81,7 +81,9 @@ async def generate_mappings(docs_dir: str) -> Dict[str, str]:
         else:
             logger.warning(f"No matching URL found for {file_path}")
 
-    return mappings
+    # Return both mappings and empty redirects dictionary
+    redirects = {}
+    return mappings, redirects
 
 
 async def main():
@@ -93,10 +95,10 @@ async def main():
 
         # Generate mappings
         logger.info("Generating URL mappings for English content...")
-        mappings = await generate_mappings(docs_dir)
+        mappings, redirects = await generate_mappings(docs_dir)
 
         # Prepare YAML content
-        content = {"mappings": mappings}
+        content = {"mappings": mappings, "redirects": redirects}
 
         # Save to YAML file
         os.makedirs(os.path.dirname(output_file), exist_ok=True)

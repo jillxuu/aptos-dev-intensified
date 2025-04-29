@@ -315,7 +315,7 @@ export default function App() {
               <ChatbotProvider
                 config={{
                   apiKey: '',
-                  apiUrl: 'http://localhost:8000',
+                  apiUrl: 'http://localhost:8080',
                   ragProvider: RagProvider.DEVELOPER_DOCS,
                 }}
               >

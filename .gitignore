@@ -45,5 +45,8 @@ logs/
 *.swp
 *.swo
 
+.cursor/
 .cursorrules
 /.cursor/rules
+
+firebase-credentials.json
