@@ -55,7 +55,7 @@ def initialize_vector_store(
             return
 
         # Initialize embeddings and vector store
-        embeddings = OpenAIEmbeddings("text-embedding-3-large")
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
         vector_store = FAISS.from_documents(documents, embeddings)
 
         # Save vector store

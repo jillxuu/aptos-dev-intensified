@@ -4,6 +4,10 @@ FROM --platform=linux/amd64 python:3.11-slim
 # Set working directory
 WORKDIR /app
 
+# Add build argument for OpenAI API key
+ARG OPENAI_API_KEY
+ENV OPENAI_API_KEY=$OPENAI_API_KEY
+
 # Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -15,13 +19,17 @@ RUN apt-get update && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Download NLTK data
+RUN python -c "import nltk; nltk.download('punkt'); nltk.download('averaged_perceptron_tagger'); nltk.download('stopwords')"
+
 # Copy application code
 COPY app/ ./app/
 COPY scripts/ ./scripts/
 
-# Create data directories
+# Create data and logs directories
 RUN mkdir -p ./data/generated/developer-docs && \
-    mkdir -p ./data/generated/aptos-learn
+    mkdir -p ./data/generated/aptos-learn && \
+    mkdir -p ./logs
 
 # Clone documentation
 RUN git clone --depth 1 https://github.com/aptos-labs/developer-docs.git data/developer-docs

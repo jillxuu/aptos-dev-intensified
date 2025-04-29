@@ -59,13 +59,17 @@ logger = logging.getLogger(__name__)
 
 # Ensure NLTK resources are downloaded
 try:
+    # Download required NLTK resources first
+    nltk.download("punkt")
+    nltk.download("stopwords")
+
+    # Then verify they exist
     nltk.data.find("tokenizers/punkt")
-except LookupError:
-    nltk.download("punkt", quiet=True)
-try:
     nltk.data.find("corpora/stopwords")
-except LookupError:
-    nltk.download("stopwords", quiet=True)
+except LookupError as e:
+    logger.error(f"Failed to download or find required NLTK resources: {e}")
+    logger.error("Please run 'python3 -m nltk.downloader punkt stopwords' manually")
+    sys.exit(1)
 
 # Define priority topics (similar to aptos-qa-dataset)
 PRIORITY_TOPICS = [
