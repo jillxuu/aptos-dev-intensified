@@ -45,6 +45,9 @@ importers:
       '@aptos/chatbot-ui-tailwind':
         specifier: workspace:*
         version: link:../packages/chatbot-ui-tailwind
+      '@aptos/demo':
+        specifier: 'link:'
+        version: 'link:'
       '@heroicons/react':
         specifier: ^2.2.0
         version: 2.2.0(react@18.3.1)

@@ -45,7 +45,9 @@ fi
 
 # Build the Docker image
 echo "🏗️ Building Docker image..."
-docker build --platform linux/amd64 -t $IMAGE_NAME .
+docker build --platform linux/amd64 \
+  --build-arg OPENAI_API_KEY=$OPENAI_API_KEY \
+  -t $IMAGE_NAME .
 
 # Push the image to Artifact Registry
 echo "⬆️ Pushing image to Artifact Registry..."
