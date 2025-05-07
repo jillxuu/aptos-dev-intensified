@@ -21,7 +21,7 @@ import asyncio
 import re
 from fastapi import BackgroundTasks
 import json
-from app.config import get_docs_url, DOCS_BASE_URLS, DEFAULT_PROVIDER
+from app.config import get_docs_url, DOCS_BASE_URLS, DEFAULT_PROVIDER, USE_MULTI_STEP_RAG
 from app.path_registry import path_registry
 
 # Configure logging
@@ -520,6 +520,7 @@ async def generate_ai_response(
     firestore_chat: FirestoreChat,
     background_tasks: BackgroundTasks,
     rag_provider: str = None,
+    use_multi_step: bool = USE_MULTI_STEP_RAG,  # Use config setting as default
 ) -> AsyncGenerator[str, None]:
     """
     Generate AI response using RAG.
@@ -530,6 +531,7 @@ async def generate_ai_response(
         firestore_chat: The Firestore chat instance
         background_tasks: FastAPI background tasks
         rag_provider: The RAG provider to use
+        use_multi_step: Whether to use multi-step retrieval
 
     Returns:
         An async generator that yields chunks of the AI response
@@ -599,7 +601,11 @@ async def generate_ai_response(
         context_retrieval_start = datetime.now()
         logger.info("[RAG] Retrieving relevant context...")
         context_chunks = await rag_provider_obj.get_relevant_context(
-            message, k=7, include_series=is_process_query, provider_type=provider_name
+            message, 
+            k=7, 
+            include_series=is_process_query, 
+            provider_type=provider_name,
+            use_multi_step=use_multi_step  # Enable adaptive multi-step retrieval
         )
         context_retrieval_time = (
             datetime.now() - context_retrieval_start
@@ -840,16 +846,17 @@ def get_firestore_chat() -> FirestoreChat:
             "content": {
                 "application/json": {
                     "example": json.loads(
-                        """
-                    {
+                        f"""
+                    {{
                         "content": "What is Aptos Move?",
                         "client_id": "client-123",
                         "message_id": "msg-123",
                         "chat_id": null,
                         "role": "user",
                         "rag_provider": null,
-                        "temperature": 0.7
-                    }
+                        "temperature": 0.1,
+                        "use_multi_step": {str(USE_MULTI_STEP_RAG).lower()}
+                    }}
                     """
                     )
                 }
@@ -877,7 +884,8 @@ async def unified_chat_message_stream(
       - **chat_id** (optional): Chat ID to add message to (creates new chat if not provided)
       - **role** (optional): Message role (defaults to "user")
       - **rag_provider** (optional): RAG provider to use (uses server default if not provided)
-      - **temperature** (optional): Temperature for LLM generation (defaults to 0.7)
+      - **temperature** (optional): Temperature for LLM generation (defaults to 0.1)
+      - **use_multi_step** (optional): Whether to use multi-step retrieval (defaults to True)
     - **rag_provider**: Optional override for the RAG provider specified in the request
 
     Returns:
@@ -899,6 +907,7 @@ async def unified_chat_message_stream(
         firestore_chat=firestore_chat,
         background_tasks=background_tasks,
         rag_provider=rag_provider or chat_request.rag_provider,
+        use_multi_step=chat_request.use_multi_step,
     )
 
     # Create a custom generator that streams the AI response directly

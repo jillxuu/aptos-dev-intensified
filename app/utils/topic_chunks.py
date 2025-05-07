@@ -195,24 +195,53 @@ async def get_topic_aware_context(
 
         # Create a mapping of chunk IDs to enhanced chunks for quick lookup
         chunk_map = {chunk["id"]: chunk for chunk in enhanced_chunks}
+        
+        # Log the number of items in the chunk map for debugging
+        logger.info(f"[TOPIC-AWARE] Query: '{query}', chunk map size: {len(chunk_map)}")
 
         # Get relevant documents from vector store
         try:
             docs_with_scores = vector_store.similarity_search_with_score(query, k=k)
+            logger.info(f"[TOPIC-AWARE] Found {len(docs_with_scores)} documents for query: {query}")
+            
+            # Log a few result metadata samples for debugging
+            if docs_with_scores:
+                logger.info(f"[TOPIC-AWARE] First document metadata keys: {list(docs_with_scores[0][0].metadata.keys())}")
+                logger.info(f"[TOPIC-AWARE] First document content preview: {docs_with_scores[0][0].page_content[:100]}...")
         except Exception as e:
             logger.error(f"[TOPIC-AWARE] Error during similarity search: {str(e)}")
             return []
 
         # Process results
         results = []
+        skipped_doc_count = 0
+        processed_doc_count = 0
+        
         for i, (doc, score) in enumerate(docs_with_scores):
             # Try both chunk_id and id in metadata
             chunk_id = doc.metadata.get("chunk_id") or doc.metadata.get("id")
 
             if not chunk_id:
+                skipped_doc_count += 1
                 logger.warning(
                     f"[TOPIC-AWARE] Document {i+1} has no chunk_id or id in metadata"
                 )
+                # Add basic result even without chunk ID
+                result = {
+                    "content": doc.page_content,
+                    "section": doc.metadata.get("section", ""),
+                    "source": doc.metadata.get("source", ""),
+                    "summary": doc.metadata.get("summary", ""),
+                    "score": float(score),
+                    "is_priority": doc.metadata.get("is_priority", False),
+                    "related_documents": [],
+                    "is_code_block": doc.metadata.get("contains_code", False),
+                    "code_summary": None,
+                    "code_languages": doc.metadata.get("code_languages", []),
+                    "parent_info": None,
+                }
+                results.append(result)
+                processed_doc_count += 1
                 continue
 
             if chunk_id not in chunk_map:
@@ -288,9 +317,11 @@ async def get_topic_aware_context(
             }
 
             results.append(result)
+            processed_doc_count += 1
 
         # Sort results by score and priority status
         results.sort(key=lambda x: (not x["is_priority"], -x["score"]))
+        logger.info(f"[TOPIC-AWARE] Results summary: {processed_doc_count} processed, {skipped_doc_count} skipped due to missing IDs")
         return results
     except Exception as e:
         logger.error(f"[TOPIC-AWARE] Error retrieving topic-aware context: {str(e)}")

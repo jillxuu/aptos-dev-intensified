@@ -29,6 +29,7 @@ from app.config import (
     DOC_BASE_PATHS,
     CONTENT_PATHS,
     DEFAULT_PROVIDER,
+    USE_MULTI_STEP_RAG,
     get_vector_store_path,
     get_generated_data_path,
 )
@@ -289,7 +290,8 @@ class ChatMessageRequest(BaseModel):
     rag_provider: Optional[str] = (
         None  # If not provided, will use DEFAULT_RAG_PROVIDER from server config
     )
-    temperature: Optional[float] = 0.7  # Add temperature field for consistency
+    temperature: Optional[float] = 0.1  # Set temperature to 0.0
+    use_multi_step: Optional[bool] = USE_MULTI_STEP_RAG  # Use the global config setting
 
 
 class ChatMessageResponse(BaseModel):
@@ -635,7 +637,7 @@ async def generate_chunk_summary(content: str, max_length: int = 100) -> str:
                     {"role": "user", "content": content},
                 ],
                 max_tokens=100,  # Limit token usage
-                temperature=0.3,  # Lower temperature for more focused summaries
+                temperature=0.1,  # Lower temperature for more consistent summaries
             )
             return response.choices[0].message.content.strip()
 
@@ -1935,7 +1937,7 @@ class UnifiedChatRequest(BaseModel):
         None, description="Full message history for new chats (optional)"
     )
     temperature: float = Field(
-        0.7, description="Temperature for LLM generation (0.0 to 1.0, defaults to 0.7)"
+        0.1, description="Temperature for LLM generation (0.0 to 1.0, defaults to 0.1)"
     )
 
     # Fields for both
@@ -1951,4 +1953,8 @@ class UnifiedChatRequest(BaseModel):
     message_id: Optional[str] = Field(
         None,
         description="Unique identifier for the message (generated if not provided)",
+    )
+    use_multi_step: bool = Field(
+        USE_MULTI_STEP_RAG, 
+        description="Whether to use multi-step adaptive retrieval (defaults to configuration setting)"
     )
