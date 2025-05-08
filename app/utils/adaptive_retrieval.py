@@ -8,11 +8,14 @@ query complexity analysis and iterative retrieval with follow-up queries.
 import json
 import logging
 import hashlib
+import asyncio
+import time
 from typing import Dict, List, Any
 import os
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAI, ChatOpenAI
 from app.utils.topic_chunks import get_topic_aware_context
+from app.utils.vector_store_utils import batch_similarity_search_with_score, similarity_search_with_batch_support
 
 logger = logging.getLogger(__name__)
 
@@ -26,41 +29,39 @@ except ImportError:
     openai_client = None
 
 
-async def analyze_query_complexity(query: str) -> Dict[str, Any]:
+async def generate_retrieval_queries(query: str) -> Dict[str, Any]:
     """
-    Analyze the query to determine complexity and generate retrieval strategies.
+    Generate targeted retrieval queries to break down the original question.
     
     Args:
         query: The user query
         
     Returns:
-        Dictionary containing query analysis and retrieval strategies
+        Dictionary containing retrieval queries
     """
+    start_time = time.time()
+    logger.info(f"[ADAPTIVE-RAG] Starting retrieval query generation")
+    
     prompt = f"""
     Analyze this development query:
     "{query}"
     
-    First, determine if this is a simple or complex question:
-    - Simple: Can be answered with a single concept or documentation lookup
-    - Complex: Requires understanding multiple components, examples, or implementation details
+    Break down this query into targeted retrieval questions that would help gather the necessary information.
     
-    Then, generate effective retrieval strategies:
-    1. What specific components, functions, or concepts are mentioned?
-    2. Generate 3-4 reformulated queries that would gather necessary information
-    3. What additional information might be needed for a complete answer?
+    Create:
+    1. A list of targeted questions that help retrieve specific information needed to answer the main query
+    2. Consider different aspects, components, or concepts mentioned in the query
+    3. Ensure questions are specific and focused on retrieving relevant documentation
     
-    Return as JSON with these fields:
-    - complexity: string (either "simple" or "complex")
-    - key_components: list[string] (relevant components, classes, functions, etc.)
-    - reformulated_queries: list[string] (3-4 retrieval queries to gather information)
-    - potential_follow_ups: list[string] (types of additional information that might be needed)
+    Return as JSON with this field:
+    - retrieval_queries: list[string] (4-6 targeted questions to retrieve relevant information)
     """
     
     messages = [{"role": "system", "content": prompt}]
     try:
         # Use synchronous approach instead of await
         response = openai_client.chat.completions.create(
-            model="gpt-4.1",
+            model="gpt-4.1-nano",
             messages=messages,
             response_format={"type": "json_object"},
             temperature=0.1
@@ -69,29 +70,327 @@ async def analyze_query_complexity(query: str) -> Dict[str, Any]:
         # Parse the result
         result = json.loads(response.choices[0].message.content)
         
-        # Add default values if missing
-        result.setdefault("complexity", "simple")
-        result.setdefault("key_components", [])
-        result.setdefault("reformulated_queries", [])
-        result.setdefault("potential_follow_ups", [])
-        
+        # Ensure we have retrieval_queries field with default empty list
+        if "retrieval_queries" not in result or not isinstance(result["retrieval_queries"], list):
+            result["retrieval_queries"] = []
+            
+        # Add the original query to ensure we always include it
+        if query not in result["retrieval_queries"]:
+            result["retrieval_queries"].insert(0, query)
+            
+        elapsed = time.time() - start_time
+        logger.info(f"[ADAPTIVE-RAG] Generated {len(result['retrieval_queries'])} retrieval queries in {elapsed:.2f}s")
         return result
     except Exception as e:
-        logger.error(f"Error analyzing query complexity: {e}")
-        # Return a default analysis in case of error
+        logger.error(f"Error generating retrieval queries: {e}")
+        # Return a default result with just the original query
+        elapsed = time.time() - start_time
+        logger.info(f"[ADAPTIVE-RAG] Query generation failed after {elapsed:.2f}s")
         return {
-            "complexity": "simple",
-            "key_components": [],
-            "reformulated_queries": [],
-            "potential_follow_ups": []
+            "retrieval_queries": [query]
         }
+
+
+async def analyze_follow_up_needs(query: str, initial_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Analyze if follow-up queries are needed based on initial results.
+    
+    Args:
+        query: The original user query
+        initial_results: The initial retrieval results
+        
+    Returns:
+        Dictionary with follow-up queries if needed
+    """
+    start_time = time.time()
+    
+    # Format current results for analysis with fallbacks for missing fields
+    if not initial_results:
+        logger.warning("[ADAPTIVE-RAG] No initial results to analyze for follow-up needs")
+        return {"is_complete": True, "follow_up_queries": []}
+    
+    # Take the top 5 results for analysis
+    top_results = initial_results[:5]
+    context_preview = "\n".join([
+        f"Document {i+1}: {result.get('section', 'Unknown section')}\nSummary: {result.get('summary', 'No summary available')}"
+        for i, result in enumerate(top_results)
+    ])
+    
+    analysis_prompt = f"""
+    Based on the user query: "{query}"
+    
+    I have retrieved these documents:
+    {context_preview}
+    
+    Analyze if these results fully address the user's question:
+    1. Is any important information missing?
+    2. Are there specific aspects not covered by these documents?
+    
+    Return as JSON with fields:
+    - is_complete: boolean (true if results are sufficient)
+    - follow_up_queries: list[string] (specific queries to find missing information, up to 3 queries)
+    """
+    
+    # Get analysis
+    messages = [{"role": "system", "content": analysis_prompt}]
+    try:
+        # Use synchronous approach instead of await
+        response = openai_client.chat.completions.create(
+            model="gpt-4.1-mini", 
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=0.1
+        )
+        
+        # Parse result
+        result = json.loads(response.choices[0].message.content)
+        
+        # Ensure required fields
+        if "is_complete" not in result:
+            result["is_complete"] = True
+        if "follow_up_queries" not in result or not isinstance(result["follow_up_queries"], list):
+            result["follow_up_queries"] = []
+            
+        elapsed = time.time() - start_time
+        query_count = len(result.get("follow_up_queries", []))
+        logger.info(f"[ADAPTIVE-RAG] Follow-up analysis completed in {elapsed:.2f}s, generated {query_count} follow-up queries")
+        return result
+    except Exception as e:
+        logger.error(f"Error analyzing follow-up needs: {e}")
+        # Default to complete in case of error
+        return {"is_complete": True, "follow_up_queries": []}
+
+
+async def execute_query(
+    query: str,
+    vector_store: FAISS,
+    enhanced_chunks: List[Dict[str, Any]],
+    retrieval_k: int,
+    query_type: str = "primary"
+) -> List[Dict[str, Any]]:
+    """
+    Execute a single retrieval query.
+    
+    Args:
+        query: The query to execute
+        vector_store: Initialized vector store
+        enhanced_chunks: List of enhanced chunks
+        retrieval_k: Number of chunks to retrieve
+        query_type: Type of query ("primary" or "follow_up")
+        
+    Returns:
+        List of relevant chunks with metadata
+    """
+    start_time = time.time()
+    logger.info(f"[ADAPTIVE-RAG] Starting {query_type} query: {query}")
+    
+    results = await get_topic_aware_context(
+        query=query,
+        vector_store=vector_store,
+        enhanced_chunks=enhanced_chunks,
+        k=int(retrieval_k)
+    )
+    
+    # Process results
+    processed_results = []
+    for result in results:
+        # Generate a content hash as a fallback ID
+        content = result.get("content", "")
+        content_hash = hashlib.md5(content.encode()).hexdigest()
+        
+        # Try to use existing ID first, fall back to content hash
+        result_id = result.get("id") or content_hash
+        
+        # Add the ID to the result for future reference
+        if "id" not in result:
+            result["id"] = result_id
+            
+        # Add retrieval metadata
+        result["retrieval_query"] = query
+        result["retrieval_type"] = query_type
+        processed_results.append((result_id, result))
+    
+    elapsed = time.time() - start_time
+    logger.info(f"[ADAPTIVE-RAG] {query_type.capitalize()} query completed in {elapsed:.2f}s, found {len(processed_results)} results")
+    return processed_results
+
+
+async def execute_batch_queries(
+    queries: List[str],
+    vector_store: FAISS,
+    enhanced_chunks: List[Dict[str, Any]],
+    retrieval_k: int,
+    query_type: str = "primary"
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Execute multiple retrieval queries as a batch for improved performance.
+    
+    Args:
+        queries: List of queries to execute
+        vector_store: Initialized vector store
+        enhanced_chunks: List of enhanced chunks
+        retrieval_k: Number of chunks to retrieve per query
+        query_type: Type of query ("primary" or "follow_up")
+        
+    Returns:
+        Dictionary mapping result IDs to results
+    """
+    start_time = time.time()
+    logger.info(f"[ADAPTIVE-RAG] Starting batch {query_type} queries: {len(queries)} queries")
+    
+    # Step 1: Get the batch similarity search results
+    batch_search_start = time.time()
+    
+    # Use batch similarity search for all queries at once
+    all_docs_with_scores = await similarity_search_with_batch_support(
+        vector_store=vector_store,
+        query="",  # Empty, using batch mode
+        queries=queries,
+        k=int(retrieval_k)
+    )
+    
+    batch_search_time = time.time() - batch_search_start
+    logger.info(f"[ADAPTIVE-RAG] Batch similarity search completed in {batch_search_time:.2f}s")
+    
+    # Step 2: Process documents from batch search
+    process_start = time.time()
+    
+    # Create chunk map for quick lookups (done once for all results)
+    chunk_map = {chunk["id"]: chunk for chunk in enhanced_chunks}
+    
+    # Initialize results dictionary to store deduplicated results
+    all_results = {}
+    
+    # Process each document
+    for doc, score in all_docs_with_scores:
+        # Try both chunk_id and id in metadata
+        chunk_id = doc.metadata.get("chunk_id") or doc.metadata.get("id")
+
+        # For documents without chunk ID, generate hash from content
+        if not chunk_id:
+            content = doc.page_content
+            content_hash = hashlib.md5(content.encode()).hexdigest()
+            result_id = content_hash
+            
+            # Create a basic result
+            result = {
+                "id": result_id,
+                "content": content,
+                "section": doc.metadata.get("section", ""),
+                "source": doc.metadata.get("source", ""),
+                "summary": doc.metadata.get("summary", ""),
+                "score": float(score),
+                "is_priority": doc.metadata.get("is_priority", False),
+                "related_documents": [],
+                "is_code_block": doc.metadata.get("contains_code", False),
+                "code_summary": None,
+                "code_languages": doc.metadata.get("code_languages", []),
+                "parent_info": None,
+                "retrieval_type": query_type,
+                "retrieval_query": "batch query",  # No easy way to know which query matched
+            }
+            
+            all_results[result_id] = result
+            continue
+            
+        # Skip if chunk not in map
+        if chunk_id not in chunk_map:
+            logger.warning(f"[ADAPTIVE-RAG] Chunk ID {chunk_id} not found in chunk map")
+            continue
+            
+        # Get the enhanced chunk
+        enhanced_chunk = chunk_map[chunk_id]
+        
+        # If this was an enhanced embedding, use the original content for display
+        content = doc.metadata.get("original_content", doc.page_content)
+        
+        # Get code summary if available
+        code_summary = None
+        if doc.metadata.get("contains_code") and doc.metadata.get("code_summary"):
+            code_summary = doc.metadata.get("code_summary")
+            
+        # Process related chunks
+        related_chunks = []
+        related_ids = enhanced_chunk["metadata"].get("related_topics", [])
+        
+        for related_id in related_ids:
+            if related_id in chunk_map:
+                related_chunk = chunk_map[related_id]
+                similarity = (
+                    enhanced_chunk["metadata"]
+                    .get("topic_similarity_scores", {})
+                    .get(related_id, 0)
+                )
+                
+                if similarity >= 0.7:  # Using SIMILARITY_THRESHOLD value from topic_chunks
+                    related_chunks.append(
+                        {
+                            "id": related_id,
+                            "title": related_chunk["metadata"].get("title", ""),
+                            "summary": related_chunk["metadata"].get("summary", ""),
+                            "similarity": similarity,
+                        }
+                    )
+                    
+        # Sort related chunks by similarity
+        related_chunks.sort(key=lambda x: x["similarity"], reverse=True)
+        
+        # Get parent info if available
+        parent_info = None
+        parent_id = doc.metadata.get("parent_id")
+        
+        if parent_id:
+            if parent_id in chunk_map:
+                parent_chunk = chunk_map[parent_id]
+                parent_info = {
+                    "id": parent_id,
+                    "title": parent_chunk["metadata"].get("title", ""),
+                    "summary": parent_chunk["metadata"].get("summary", ""),
+                }
+        
+        # Create final result
+        result = {
+            "id": chunk_id,
+            "content": content,
+            "section": doc.metadata.get("section", ""),
+            "source": doc.metadata.get("source", ""),
+            "summary": doc.metadata.get("summary", ""),
+            "score": float(score),
+            "is_priority": doc.metadata.get("is_priority", False),
+            "related_documents": related_chunks,
+            "is_code_block": doc.metadata.get("contains_code", False),
+            "code_summary": code_summary,
+            "code_languages": doc.metadata.get("code_languages", []),
+            "parent_info": parent_info,
+            "retrieval_type": query_type,
+            "retrieval_query": "batch query",  # No easy way to know which query matched
+        }
+        
+        # If we already have this result, keep the one with higher score
+        if chunk_id in all_results:
+            if score > all_results[chunk_id]["score"]:
+                all_results[chunk_id] = result
+        else:
+            all_results[chunk_id] = result
+            
+    process_time = time.time() - process_start
+    total_time = time.time() - start_time
+    result_count = len(all_results)
+    
+    logger.info(f"[ADAPTIVE-RAG] Batch {query_type} queries completed in {total_time:.2f}s")
+    logger.info(f"[ADAPTIVE-RAG] PERFORMANCE BREAKDOWN:")
+    logger.info(f"[ADAPTIVE-RAG] - Batch similarity search: {batch_search_time:.2f}s ({(batch_search_time/total_time)*100:.1f}%)")
+    logger.info(f"[ADAPTIVE-RAG] - Results processing: {process_time:.2f}s ({(process_time/total_time)*100:.1f}%)")
+    logger.info(f"[ADAPTIVE-RAG] Found {result_count} unique results across {len(queries)} queries")
+    
+    return all_results
 
 
 async def adaptive_multi_step_retrieval(
     query: str,
     vector_store: FAISS,
     enhanced_chunks: List[Dict[str, Any]],
-    k: int = 7,
+    k: int = 4,
     max_iterations: int = 2
 ) -> List[Dict[str, Any]]:
     """
@@ -107,161 +406,120 @@ async def adaptive_multi_step_retrieval(
     Returns:
         Combined list of relevant chunks
     """
-    # Step 1: Analyze query to understand complexity
-    query_analysis = await analyze_query_complexity(query)
-    is_complex = query_analysis["complexity"] == "complex"
+    total_start_time = time.time()
+    logger.info(f"[ADAPTIVE-RAG] Starting multi-step retrieval process for query: {query}")
     
-    # Adjust retrieval parameters based on complexity
-    # More chunks and iterations for complex queries
-    retrieval_k = k * 1.5 if is_complex else k
-    retrieval_iterations = max_iterations if is_complex else min(max_iterations, 2)
+    # Step 1: Generate retrieval queries to break down the original question
+    queries_start_time = time.time()
+    query_analysis = await generate_retrieval_queries(query)
     
-    logger.info(f"[ADAPTIVE-RAG] Query complexity: {query_analysis['complexity']}")
-    logger.info(f"[ADAPTIVE-RAG] Using parameters: k={retrieval_k}, max_iterations={retrieval_iterations}")
+    # Get all retrieval queries (original + generated)
+    all_queries = query_analysis["retrieval_queries"]
     
-    # Step 2: Prepare queries (original + reformulations)
-    all_queries = [query] + query_analysis["reformulated_queries"]
-    
-    # Add targeted queries for key components if complex
-    if is_complex and query_analysis["key_components"]:
-        for component in query_analysis["key_components"]:
-            if len(component) > 2:  # Avoid very short identifiers
-                all_queries.append(f"documentation for {component}")
-                all_queries.append(f"implementation of {component}")
+    queries_elapsed = time.time() - queries_start_time
+    logger.info(f"[ADAPTIVE-RAG] Prepared {len(all_queries)} queries in {queries_elapsed:.2f}s")
     
     # Track all retrieved chunks and their scores
     all_results = {}
-    iteration_results = []
     
-    # Step 3: Perform initial retrieval with all queries
-    for q in all_queries:
-        logger.info(f"[ADAPTIVE-RAG] Executing query: {q}")
-        results = await get_topic_aware_context(
-            query=q,
-            vector_store=vector_store,
-            enhanced_chunks=enhanced_chunks,
-            k=int(retrieval_k)
+    # Step 2: Execute primary retrieval using batched approach
+    primary_start_time = time.time()
+    
+    if len(all_queries) > 1:
+        # Use new batch processing for multiple queries
+        logger.info(f"[ADAPTIVE-RAG] Executing primary retrieval using batched search for {len(all_queries)} queries")
+        primary_results = await execute_batch_queries(
+            all_queries, 
+            vector_store, 
+            enhanced_chunks, 
+            k, 
+            "primary"
         )
+        all_results.update(primary_results)
+    else:
+        # Use traditional approach for single query
+        logger.info(f"[ADAPTIVE-RAG] Executing primary retrieval using standard search")
+        primary_result_pairs = await execute_query(
+            all_queries[0], 
+            vector_store, 
+            enhanced_chunks, 
+            k, 
+            "primary"
+        )
+        for result_id, result in primary_result_pairs:
+            all_results[result_id] = result
+    
+    primary_elapsed = time.time() - primary_start_time
+    logger.info(f"[ADAPTIVE-RAG] Primary retrieval completed in {primary_elapsed:.2f}s, found {len(all_results)} unique chunks")
+    
+    # Step 3: Analyze if follow-up queries are needed
+    follow_up_start_time = time.time()
+    
+    # Convert dictionary to list for analysis
+    result_list = list(all_results.values())
+    follow_up_analysis = await analyze_follow_up_needs(query, result_list)
+    follow_up_queries = follow_up_analysis.get("follow_up_queries", [])
+    
+    # Step 4: Execute follow-up queries if needed
+    if not follow_up_analysis.get("is_complete", True) and follow_up_queries:
+        follow_up_queries_start_time = time.time()
         
-        # Add to results tracking
-        for result in results:
-            # Generate a content hash as a fallback ID
-            content = result.get("content", "")
-            content_hash = hashlib.md5(content.encode()).hexdigest()
-            
-            # Try to use existing ID first, fall back to content hash
-            result_id = result.get("id") or content_hash
-            
-            # Add the ID to the result for future reference
-            if "id" not in result:
-                result["id"] = result_id
-                
-            if result_id not in all_results:
-                all_results[result_id] = result
-                # Add retrieval source
-                result["retrieval_query"] = q
-                result["retrieval_type"] = "primary"
-            else:
-                # Keep the highest score if chunk was retrieved multiple times
-                all_results[result_id]["score"] = max(
-                    all_results[result_id].get("score", 0), 
-                    result.get("score", 0)
+        if follow_up_queries:
+            # Use batched retrieval if multiple follow-up queries
+            if len(follow_up_queries) > 1:
+                logger.info(f"[ADAPTIVE-RAG] Executing follow-up retrieval using batched search for {len(follow_up_queries)} queries")
+                follow_up_results = await execute_batch_queries(
+                    follow_up_queries, 
+                    vector_store, 
+                    enhanced_chunks, 
+                    k, 
+                    "follow_up"
                 )
-        
-        # Track results from this iteration
-        iteration_results.append({
-            "query": q,
-            "results_count": len(results)
-        })
-    
-    # Step 4: Analyze if follow-up queries are needed (for complex queries or if follow-ups suggested)
-    if retrieval_iterations > 1 and (is_complex or query_analysis["potential_follow_ups"]) and all_results:
-        # Format current results for analysis with fallbacks for missing fields
-        context_preview = "\n".join([
-            f"Document {i+1}: {result.get('section', 'Unknown section')}\nSummary: {result.get('summary', 'No summary available')}"
-            for i, result in enumerate(list(all_results.values())[:5])
-        ])
-        
-        analysis_prompt = f"""
-        Based on the user query: "{query}"
-        
-        I have retrieved these documents:
-        {context_preview}
-        
-        The query was analyzed to be: {query_analysis['complexity']}
-        Key components: {", ".join(query_analysis['key_components'])}
-        
-        Analyze if these results fully address the user's question:
-        1. Is any important information missing?
-        2. Are there specific aspects not covered by these documents?
-        
-        Return as JSON with fields:
-        - is_complete: boolean (true if results are sufficient)
-        - missing_information: string (what's missing, if anything)
-        - follow_up_queries: list[string] (specific queries to find missing information)
-        """
-        
-        # Get analysis
-        messages = [{"role": "system", "content": analysis_prompt}]
-        try:
-            # Use synchronous approach instead of await
-            response = openai_client.chat.completions.create(
-                model="gpt-4.1", 
-                messages=messages,
-                response_format={"type": "json_object"},
-                temperature=0.1
-            )
-            
-            # Parse result
-            follow_up_analysis = json.loads(response.choices[0].message.content)
-        except Exception as e:
-            logger.error(f"Error analyzing follow-up needs: {e}")
-            # Default to complete in case of error
-            follow_up_analysis = {"is_complete": True, "follow_up_queries": []}
-        
-        # Step 5: Execute follow-up queries if needed
-        if not follow_up_analysis.get("is_complete", True) and follow_up_analysis.get("follow_up_queries"):
-            logger.info(f"[ADAPTIVE-RAG] Initial results incomplete. Running follow-up queries.")
-            
-            for iteration in range(int(retrieval_iterations) - 1):
-                follow_up_queries = follow_up_analysis.get("follow_up_queries", [])
-                if not follow_up_queries:
-                    break
-                    
-                # Execute each follow-up query
-                for q in follow_up_queries:
-                    logger.info(f"[ADAPTIVE-RAG] Executing follow-up query: {q}")
-                    results = await get_topic_aware_context(
-                        query=q,
-                        vector_store=vector_store,
-                        enhanced_chunks=enhanced_chunks,
-                        k=int(retrieval_k)
-                    )
-                    
-                    # Add new results
-                    for result in results:
-                        # Generate a content hash as a fallback ID
-                        content = result.get("content", "")
-                        content_hash = hashlib.md5(content.encode()).hexdigest()
-                        
-                        # Try to use existing ID first, fall back to content hash
-                        result_id = result.get("id") or content_hash
-                        
-                        # Add the ID to the result for future reference
-                        if "id" not in result:
-                            result["id"] = result_id
-                        
-                        if result_id not in all_results:
-                            all_results[result_id] = result
-                            # Tag this as a follow-up result
-                            result["retrieval_type"] = "follow_up"
-                            result["retrieval_query"] = q
                 
-                # Only do multiple iterations for complex queries
-                if not is_complex:
-                    break
+                # Track new chunks
+                new_chunks_count = 0
+                for result_id, result in follow_up_results.items():
+                    if result_id not in all_results:
+                        all_results[result_id] = result
+                        new_chunks_count += 1
+                    else:
+                        # Keep the highest score
+                        all_results[result_id]["score"] = max(
+                            all_results[result_id].get("score", 0),
+                            result.get("score", 0)
+                        )
+            else:
+                # Use traditional approach for single follow-up query
+                logger.info(f"[ADAPTIVE-RAG] Executing single follow-up query using standard search")
+                follow_up_result_pairs = await execute_query(
+                    follow_up_queries[0], 
+                    vector_store, 
+                    enhanced_chunks, 
+                    k, 
+                    "follow_up"
+                )
+                
+                # Track new chunks
+                new_chunks_count = 0
+                for result_id, result in follow_up_result_pairs:
+                    if result_id not in all_results:
+                        all_results[result_id] = result
+                        new_chunks_count += 1
+                    else:
+                        # Keep the highest score
+                        all_results[result_id]["score"] = max(
+                            all_results[result_id].get("score", 0),
+                            result.get("score", 0)
+                        )
+            
+            follow_up_queries_elapsed = time.time() - follow_up_queries_start_time
+            logger.info(f"[ADAPTIVE-RAG] Follow-up queries executed in {follow_up_queries_elapsed:.2f}s, found {new_chunks_count} new chunks")
     
-    # Step 6: Return all combined results, sorted by score
+    follow_up_elapsed = time.time() - follow_up_start_time
+    logger.info(f"[ADAPTIVE-RAG] Total follow-up processing completed in {follow_up_elapsed:.2f}s")
+    
+    # Step 5: Return all combined results, sorted by score
+    final_start_time = time.time()
     combined_results = list(all_results.values())
     
     # Ensure all results have a score for sorting
@@ -271,11 +529,19 @@ async def adaptive_multi_step_retrieval(
     
     combined_results.sort(key=lambda x: x.get("score", 0), reverse=True)
     
-    # Limit results based on complexity
-    # Return more results for complex queries, no extra for simple ones
-    top_limit = min(int(retrieval_k) * 2 if is_complex else int(retrieval_k), len(combined_results))
+    # Limit results to top k*2 results
+    top_limit = min(k * 2, len(combined_results))
+    final_results = combined_results[:top_limit]
+    final_elapsed = time.time() - final_start_time
     
+    total_elapsed = time.time() - total_start_time
+    logger.info(f"[ADAPTIVE-RAG] PERFORMANCE SUMMARY:")
+    logger.info(f"[ADAPTIVE-RAG] - Query generation: {queries_elapsed:.2f}s")
+    logger.info(f"[ADAPTIVE-RAG] - Primary retrieval ({len(all_queries)} queries): {primary_elapsed:.2f}s")
+    logger.info(f"[ADAPTIVE-RAG] - Follow-up processing: {follow_up_elapsed:.2f}s")
+    logger.info(f"[ADAPTIVE-RAG] - Final processing: {final_elapsed:.2f}s")
+    logger.info(f"[ADAPTIVE-RAG] - Total elapsed time: {total_elapsed:.2f}s")
     logger.info(f"[ADAPTIVE-RAG] Retrieved {len(combined_results)} unique chunks across all queries")
-    logger.info(f"[ADAPTIVE-RAG] Returning top {top_limit} chunks")
+    logger.info(f"[ADAPTIVE-RAG] Returning top {len(final_results)} chunks")
     
-    return combined_results[:top_limit] 
+    return final_results 
