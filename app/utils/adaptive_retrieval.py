@@ -43,18 +43,30 @@ async def generate_retrieval_queries(query: str) -> Dict[str, Any]:
     logger.info(f"[ADAPTIVE-RAG] Starting retrieval query generation")
     
     prompt = f"""
-    Analyze this development query:
+    You are an expert in Aptos blockchain development and the Move programming language. 
+    Analyze this developer question:
     "{query}"
     
-    Break down this query into targeted retrieval questions that would help gather the necessary information.
+    Break down this query into targeted retrieval questions that will gather all the necessary technical information to provide a complete answer. Focus specifically on Aptos and Move concepts.
     
-    Create:
-    1. A list of targeted questions that help retrieve specific information needed to answer the main query
-    2. Consider different aspects, components, or concepts mentioned in the query
-    3. Ensure questions are specific and focused on retrieving relevant documentation
+    Consider these question types:
+    1. Core concepts - What fundamental blockchain or Move concepts need explanation?
+    2. Implementation patterns - What code patterns or implementation approaches are relevant?
+    3. API usage - What specific API calls, functions, or modules are needed?
+    4. Error handling - What potential errors or edge cases should be addressed?
+    5. Debugging - What debugging information would help solve the problem?
+    
+    For each aspect of the original question, create a targeted retrieval query that will fetch the most relevant documentation or examples from a vector database.
+    
+    Guidelines for effective retrieval queries:
+    - Use technical terminology specific to Aptos and Move
+    - Include relevant function names, module names, or error codes mentioned in the query
+    - Create queries for both high-level concepts and specific implementation details
+    - Phrase queries as direct questions or information requests
+    - Include all relevant context from the original question
     
     Return as JSON with this field:
-    - retrieval_queries: list[string] (4-6 targeted questions to retrieve relevant information)
+    - retrieval_queries: list[string] (3-5 targeted questions to retrieve relevant information)
     """
     
     messages = [{"role": "system", "content": prompt}]
@@ -64,7 +76,8 @@ async def generate_retrieval_queries(query: str) -> Dict[str, Any]:
             model="gpt-4.1-nano",
             messages=messages,
             response_format={"type": "json_object"},
-            temperature=0.1
+            temperature=0.05,
+            max_tokens=350  # Limit tokens for faster response
         )
         
         # Parse the result
@@ -77,6 +90,10 @@ async def generate_retrieval_queries(query: str) -> Dict[str, Any]:
         # Add the original query to ensure we always include it
         if query not in result["retrieval_queries"]:
             result["retrieval_queries"].insert(0, query)
+        
+        # Limit to 5 queries max to reduce processing time
+        if len(result["retrieval_queries"]) > 5:
+            result["retrieval_queries"] = result["retrieval_queries"][:5]
             
         elapsed = time.time() - start_time
         logger.info(f"[ADAPTIVE-RAG] Generated {len(result['retrieval_queries'])} retrieval queries in {elapsed:.2f}s")
@@ -104,31 +121,55 @@ async def analyze_follow_up_needs(query: str, initial_results: List[Dict[str, An
     """
     start_time = time.time()
     
-    # Format current results for analysis with fallbacks for missing fields
-    if not initial_results:
-        logger.warning("[ADAPTIVE-RAG] No initial results to analyze for follow-up needs")
+    # Skip follow-up analysis for shorter, simpler queries
+    if len(query.split()) < 12 and len(initial_results) >= 3:
+        logger.info(f"[ADAPTIVE-RAG] Simple query with sufficient results, skipping follow-up analysis")
         return {"is_complete": True, "follow_up_queries": []}
     
-    # Take the top 5 results for analysis
+    # Format current results for analysis with fallbacks for missing fields
+    if not initial_results or len(initial_results) < 2:
+        logger.warning("[ADAPTIVE-RAG] Insufficient initial results, generating generic follow-ups")
+        return {
+            "is_complete": False, 
+            "follow_up_queries": [
+                f"implementation example for {query}",
+                f"code sample for {query}"
+            ]
+        }
+    
+    # Only analyze if we have enough context to make a decision
     top_results = initial_results[:5]
+    
+    # Use shorter context format to reduce tokens
     context_preview = "\n".join([
-        f"Document {i+1}: {result.get('section', 'Unknown section')}\nSummary: {result.get('summary', 'No summary available')}"
+        f"Doc {i+1}: {result.get('section', '')[:50]}... | Summary: {result.get('summary', '')[:50]}..."
         for i, result in enumerate(top_results)
     ])
     
     analysis_prompt = f"""
-    Based on the user query: "{query}"
+    You are an expert in Aptos blockchain development and the Move programming language.
     
-    I have retrieved these documents:
+    Assess whether these retrieved documents provide sufficient information to answer this developer question:
+    "{query}"
+    
+    Retrieved documents:
     {context_preview}
     
-    Analyze if these results fully address the user's question:
-    1. Is any important information missing?
-    2. Are there specific aspects not covered by these documents?
+    Analyze what's missing from these documents, if anything, to provide a complete, accurate answer:
     
-    Return as JSON with fields:
-    - is_complete: boolean (true if results are sufficient)
-    - follow_up_queries: list[string] (specific queries to find missing information, up to 3 queries)
+    1. Missing technical concepts: Are there fundamental Aptos or Move concepts not covered?
+    2. Missing implementation details: Are code examples or implementation patterns needed?
+    3. Missing API reference: Are specific function signatures, parameters, or return types needed?
+    4. Missing error handling: Are error cases or debugging approaches needed?
+    5. Missing context: Are prerequisites or related modules/components needed?
+    6. Prefer modern and latest features or code examples over deprecated or legacy code.
+    
+    For any identified gaps, create specific follow-up queries to retrieve that information.
+    Your follow-up queries should be precise, technical, and focused on retrieving exactly what's missing.
+    
+    Return as JSON with these fields:
+    - is_complete: boolean (true if results are sufficient for a complete answer)
+    - follow_up_queries: list[string] (1-5 targeted queries to retrieve missing information)
     """
     
     # Get analysis
@@ -139,7 +180,8 @@ async def analyze_follow_up_needs(query: str, initial_results: List[Dict[str, An
             model="gpt-4.1-mini", 
             messages=messages,
             response_format={"type": "json_object"},
-            temperature=0.1
+            temperature=0.05,
+            max_tokens=350  # Limit tokens for faster response
         )
         
         # Parse result

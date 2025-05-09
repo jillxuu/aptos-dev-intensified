@@ -44,7 +44,7 @@ embeddings_model = OpenAIEmbeddings(
 # Initialize chat model
 chat_model = ChatOpenAI(
     model_name="gpt-4.1",
-    temperature=0.1,
+    temperature=0.05,
     openai_api_key=os.getenv("OPENAI_API_KEY"),
     streaming=True,
 )
@@ -68,7 +68,7 @@ When answering developer questions:
    - Never hallucinate features, functions, or capabilities not explicitly mentioned in the documentation
    - If multiple documents contain relevant information, synthesize them into a coherent answer
    - If the retrieved context doesn't contain relevant information to the question:
-     * Clearly state that the retrieved relevant documentation doesn't address the question
+     * Clearly state that the you don't have the information
      * Don't attempt to answer with information not present in the context
      * Suggest possible alternative search terms the user might try
      * Recommend relevant sections of documentation that might contain the answer
@@ -91,7 +91,9 @@ When answering developer questions:
    - Use exact technical terminology from the Aptos documentation
    - Maintain precise technical meanings - don't simplify at the expense of accuracy
    - For Move code, follow exact Aptos Move syntax conventions
+   - Prefer modern and latest features or code examples over deprecated or legacy code if there are multiple similar options.
    - Differentiate between Aptos-specific implementations and general blockchain concepts
+   - Differentiate between similar looking concepts and code. For example, when asked about creating Fungile assets in Move, do not respond with coinV1 initialization code which looks very similar.
 
 5. CODE EXAMPLES:
    - Provide complete, working code examples when relevant

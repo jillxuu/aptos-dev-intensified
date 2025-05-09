@@ -12,8 +12,65 @@ from typing import List, Tuple, Dict, Any, Optional
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
+import hashlib
+import os
+import pickle
 
 logger = logging.getLogger(__name__)
+
+# Simple in-memory LRU cache for embeddings
+# Keys are hash of the text, values are the embedding vectors
+_embedding_cache = {}
+_embedding_cache_hits = 0
+_embedding_cache_misses = 0
+_embedding_cache_max_size = 1000  # Maximum number of embeddings to cache
+
+# Enable/disable embedding cache
+EMBEDDING_CACHE_ENABLED = True
+
+# Path to persist embedding cache between restarts
+EMBEDDING_CACHE_PATH = os.path.join(os.getcwd(), "data", "embedding_cache.pkl")
+
+# Load cache from disk if it exists
+def _load_embedding_cache():
+    global _embedding_cache
+    if os.path.exists(EMBEDDING_CACHE_PATH):
+        try:
+            with open(EMBEDDING_CACHE_PATH, 'rb') as f:
+                cache_data = pickle.load(f)
+                _embedding_cache = cache_data
+                logger.info(f"[VECTOR-STORE] Loaded {len(_embedding_cache)} embeddings from cache")
+        except Exception as e:
+            logger.error(f"[VECTOR-STORE] Error loading embedding cache: {e}")
+            _embedding_cache = {}
+
+# Save cache to disk
+def _save_embedding_cache():
+    if not _embedding_cache:
+        return
+        
+    try:
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(EMBEDDING_CACHE_PATH), exist_ok=True)
+        
+        # Save only up to max size entries
+        cache_subset = dict(list(_embedding_cache.items())[:_embedding_cache_max_size])
+        
+        with open(EMBEDDING_CACHE_PATH, 'wb') as f:
+            pickle.dump(cache_subset, f)
+        logger.info(f"[VECTOR-STORE] Saved {len(cache_subset)} embeddings to cache")
+    except Exception as e:
+        logger.error(f"[VECTOR-STORE] Error saving embedding cache: {e}")
+
+# Load cache on module import
+try:
+    _load_embedding_cache()
+except Exception as e:
+    logger.error(f"[VECTOR-STORE] Failed to load embedding cache: {e}")
+
+def _get_cache_key(text: str) -> str:
+    """Generate a cache key for a text string."""
+    return hashlib.md5(text.encode('utf-8')).hexdigest()
 
 async def batch_similarity_search_with_score(
     vector_store: FAISS,
@@ -51,9 +108,52 @@ async def batch_similarity_search_with_score(
         # Get embeddings for all queries in a single batch operation
         embed_start = time.time()
         
-        # Generate embeddings for all queries at once (OpenAI can handle batching internally)
-        query_embeddings = embedding_function.embed_documents(queries)
+        # Check cache for existing embeddings
+        global _embedding_cache, _embedding_cache_hits, _embedding_cache_misses
+        cached_embeddings = {}
+        queries_to_embed = []
+        cache_status = []
         
+        if EMBEDDING_CACHE_ENABLED:
+            # Check which queries we have in cache
+            for i, query in enumerate(queries):
+                cache_key = _get_cache_key(query)
+                if cache_key in _embedding_cache:
+                    cached_embeddings[i] = _embedding_cache[cache_key]
+                    cache_status.append("hit")
+                    _embedding_cache_hits += 1
+                else:
+                    queries_to_embed.append((i, query))
+                    cache_status.append("miss")
+                    _embedding_cache_misses += 1
+            
+            cache_hit_ratio = _embedding_cache_hits / (_embedding_cache_hits + _embedding_cache_misses) if (_embedding_cache_hits + _embedding_cache_misses) > 0 else 0
+            logger.info(f"[VECTOR-STORE] Embedding cache: {len(cached_embeddings)}/{len(queries)} hits ({cache_hit_ratio:.1%} overall hit ratio)")
+        else:
+            # If cache disabled, embed all queries
+            queries_to_embed = [(i, query) for i, query in enumerate(queries)]
+            
+        # Only embed queries not in cache
+        query_embeddings = [None] * len(queries)
+        
+        if queries_to_embed:
+            # Generate embeddings for uncached queries
+            uncached_queries = [q[1] for q in queries_to_embed]
+            uncached_embeddings = embedding_function.embed_documents(uncached_queries)
+            
+            # Store embeddings in the right position and update cache
+            for (query_idx, query_text), embedding in zip(queries_to_embed, uncached_embeddings):
+                query_embeddings[query_idx] = embedding
+                
+                # Update cache
+                if EMBEDDING_CACHE_ENABLED:
+                    cache_key = _get_cache_key(query_text)
+                    _embedding_cache[cache_key] = embedding
+        
+        # Fill in cached embeddings
+        for query_idx, embedding in cached_embeddings.items():
+            query_embeddings[query_idx] = embedding
+            
         embed_time = time.time() - embed_start
         logger.info(f"[VECTOR-STORE] Batch embedding completed in {embed_time:.4f}s")
         
@@ -162,6 +262,10 @@ async def batch_similarity_search_with_score(
         logger.info(f"[VECTOR-STORE] - FAISS search: {search_time:.4f}s ({(search_time/total_time)*100:.1f}%)")
         logger.info(f"[VECTOR-STORE] - Results processing: {process_time:.4f}s ({(process_time/total_time)*100:.1f}%)")
         
+        # Periodically save embedding cache
+        if EMBEDDING_CACHE_ENABLED and len(queries_to_embed) > 0:
+            _save_embedding_cache()
+            
         return all_results
     
     except Exception as e:
@@ -242,6 +346,78 @@ async def similarity_search_with_batch_support(
     
     # For single query, use the standard search
     elif query:
+        # Use embedding cache for single query if enabled
+        if EMBEDDING_CACHE_ENABLED:
+            embed_start = time.time()
+            cache_key = _get_cache_key(query)
+            
+            global _embedding_cache, _embedding_cache_hits, _embedding_cache_misses
+            if cache_key in _embedding_cache:
+                # Use cached embedding for single query
+                _embedding_cache_hits += 1
+                query_embedding = _embedding_cache[cache_key]
+                
+                # Convert embedding to numpy array
+                query_embedding_np = np.array([query_embedding], dtype=np.float32)
+                
+                # Get FAISS index and docstore
+                index = vector_store.index
+                docstore = vector_store.docstore
+                
+                # Search directly with the embedding
+                scores, indices = index.search(query_embedding_np, k)
+                
+                # Process results (similar to batch processing)
+                results = []
+                for score, idx in zip(scores[0], indices[0]):
+                    if idx == -1:
+                        continue
+                        
+                    try:
+                        # Convert FAISS index to docstore ID
+                        if hasattr(vector_store, "index_to_docstore_id"):
+                            docstore_id = vector_store.index_to_docstore_id.get(idx)
+                            if not docstore_id:
+                                continue
+                        else:
+                            docstore_id = str(idx)
+                            
+                        # Get document
+                        doc = docstore.search(docstore_id)
+                        if not doc:
+                            continue
+                            
+                        # Convert to Document if needed
+                        if not isinstance(doc, Document):
+                            if isinstance(doc, str):
+                                doc = Document(page_content=doc, metadata={})
+                            else:
+                                continue
+                                
+                        results.append((doc, float(score)))
+                    except Exception as e:
+                        logger.error(f"[VECTOR-STORE] Error processing cached result: {str(e)}")
+                
+                embed_time = time.time() - embed_start
+                logger.info(f"[VECTOR-STORE] Used cached embedding for query, processed in {embed_time:.4f}s")
+                return results
+            else:
+                # Cache miss - do regular search and update cache
+                _embedding_cache_misses += 1
+                logger.info(f"[VECTOR-STORE] Using standard search for single query (cache miss)")
+                
+                # Get embedding function
+                embedding_function = vector_store.embedding_function
+                
+                # Generate embedding
+                query_embedding = embedding_function.embed_query(query)
+                
+                # Update cache
+                _embedding_cache[cache_key] = query_embedding
+                
+                # Continue with standard search
+                
+        # Standard search with no cache optimization
         logger.info(f"[VECTOR-STORE] Using standard search for single query")
         try:
             return vector_store.similarity_search_with_score(query, k=k)
