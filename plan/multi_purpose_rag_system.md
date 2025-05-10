@@ -46,7 +46,7 @@ To serve multiple applications effectively, we need a more flexible architecture
 ┌──────────┐┌──────────┐┌──────────┐┌──────────┐┌──────────┐┌──────────┐┌──────────────┐
 │ Dev Doc  ││ GitHub   ││  API     ││  Aptos   ││ Telegram ││  Slack   ││ Standalone   │
 │  Site    ││   Q&A    ││ Service  ││   MCP    ││   Q&A    ││   Q&A    ││ General      │
-│Interface ││   Bot    ││  Client  ││  Plugin  ││   Bot    ││   App    ││ Purpose Bot  │
+│Interface ││   Bot    ││  Client  ││  Plugin  ││   Bot    ││   Bot    ││ Purpose Bot  │
 └──────────┘└──────────┘└──────────┘└──────────┘└──────────┘└──────────┘└──────────────┘
 ```
 
@@ -54,8 +54,15 @@ To serve multiple applications effectively, we need a more flexible architecture
 
 ```mermaid
 graph TD
+    %% Define styles for better readability
+    classDef coreComponent fill:#f9d5e5,stroke:#333,stroke-width:2px,color:#333,font-weight:bold,font-size:14px
+    classDef serviceLayer fill:#eeeefc,stroke:#333,stroke-width:1px,color:#333,font-weight:bold,font-size:14px
+    classDef adapter fill:#d5f5e3,stroke:#333,stroke-width:1px,color:#333,font-weight:bold,font-size:14px
+    classDef application fill:#fdebd0,stroke:#333,stroke-width:1px,color:#333,font-weight:bold,font-size:14px
+    
     %% Core Platform Layer
-    subgraph Core["RAG Core Platform"]
+    subgraph CorePlatform["RAG Core Platform"]
+        direction LR
         ChunkStore["Chunk Store Management"]
         VectorStore["Vector Store Interfaces"]
         Embedding["Embedding Pipeline"]
@@ -66,8 +73,9 @@ graph TD
         Embedding <--> LLMService
     end
     
-    %% Middleware Layer
-    subgraph Middleware["Middleware Services"]
+    %% Service Layer (instead of Middleware)
+    subgraph ServiceLayer["Service Layer"]
+        direction LR
         Profiles["Application Profiles"]
         Retrieval["Retrieval Strategies"]
         Response["Response Generators"]
@@ -77,43 +85,53 @@ graph TD
         Profiles --> Response
     end
     
-    %% Connect Core to Middleware
-    Core --> Middleware
+    %% Connect Core to Service Layer
+    CorePlatform --> ServiceLayer
     
     %% Adapter Layer
-    subgraph Adapters["Application Adapters"]
+    subgraph ApplicationAdapters["Application Adapters"]
+        direction LR
         DevDocAdapter["Documentation Site Adapter"]
-        GitHubAdapter["GitHub Q&A Adapter"]
+        GitHubDiscussionsAdapter["GitHub Discussions Adapter"]
         APIAdapter["API Service Adapter"]
-        AptosAdapter["Aptos MCP Adapter"]
+        AptosMCPAdapter["Aptos MCP Adapter"]
         TelegramAdapter["Telegram Bot Adapter"]
         SlackAdapter["Slack App Adapter"]
-        StandaloneAdapter["Standalone General Purpose Bot"]
+        StandaloneAdapter["Standalone General Purpose Bot Adapter"]
     end
     
-    %% Connect Middleware to Adapters
-    Middleware --> Adapters
+    %% Connect Service Layer to Adapters
+    ServiceLayer --> ApplicationAdapters
+    
+    %% Applications Layer
+    DocSite["Documentation Site Interface"]
+    GitHub["GitHub Discussions Q&A Bot"]
+    API["API Service Client"]
+    AptosMCP["Aptos MCP Plugin"]
+    Telegram["Telegram Q&A Bot"]
+    Slack["Slack Q&A Bot"]
+    Standalone["Standalone General Purpose Bot"]
     
     %% Connect Adapters to Applications
-    DevDocAdapter --> DocSite["Documentation Site Interface"]
-    GitHubAdapter --> GitHub["GitHub Q&A Bot"]
-    APIAdapter --> API["API Service Client"]
-    AptosAdapter --> Aptos["Aptos MCP Plugin"]
-    TelegramAdapter --> Telegram["Telegram Q&A Bot"]
-    SlackAdapter --> Slack["Slack Q&A App"]
-    StandaloneAdapter --> Standalone["Standalone Aptos ChatBot"]
+    DevDocAdapter --> DocSite
+    GitHubDiscussionsAdapter --> GitHub
+    APIAdapter --> API
+    AptosMCPAdapter --> AptosMCP
+    TelegramAdapter --> Telegram
+    SlackAdapter --> Slack
+    StandaloneAdapter --> Standalone
     
-    %% Style Node Classes
-    classDef core fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef middleware fill:#bbf,stroke:#333,stroke-width:1px;
-    classDef adapter fill:#bfb,stroke:#333,stroke-width:1px;
-    classDef application fill:#fbb,stroke:#333,stroke-width:1px;
+    %% Apply styles
+    class ChunkStore,VectorStore,Embedding,LLMService coreComponent
+    class Profiles,Retrieval,Response serviceLayer
+    class DevDocAdapter,GitHubDiscussionsAdapter,APIAdapter,AptosMCPAdapter,TelegramAdapter,SlackAdapter,StandaloneAdapter adapter
+    class DocSite,GitHub,API,AptosMCP,Telegram,Slack,Standalone application
     
-    %% Apply Styles
-    class ChunkStore,VectorStore,Embedding,LLMService core;
-    class Profiles,Retrieval,Response middleware;
-    class DevDocAdapter,GitHubAdapter,APIAdapter,AptosAdapter,TelegramAdapter,SlackAdapter,StandaloneAdapter adapter;
-    class DocSite,GitHub,API,Aptos,Telegram,Slack,Standalone application;
+    %% Add labels for clarity
+    CoreLabel["Core Infrastructure"] -.-> CorePlatform
+    ServiceLabel["Application Logic & Strategies"] -.-> ServiceLayer
+    AdapterLabel["Integration Layer"] -.-> ApplicationAdapters
+    AppLabel["Client Applications"] -.-> DocSite
 ```
 
 ## Core Components
