@@ -20,7 +20,7 @@ export function ChatWidget({
   className = '',
   inputClassName = '',
   messageClassName = '',
-  detailedMode = false,
+  fastMode = false,
   showSidebar = false,
   // Chat history props
   chats = [],
@@ -28,7 +28,7 @@ export function ChatWidget({
   onSelectChat,
   onDeleteChat,
   onUpdateChatTitle,
-  onToggleDetailedMode,
+  onToggleFastMode,
 }: ChatWidgetProps): ReactElement {
   return (
     <div className={`chat-widget ${className}`}>
@@ -40,8 +40,8 @@ export function ChatWidget({
           onSelectChat={onSelectChat}
           onDeleteChat={onDeleteChat}
           onUpdateChatTitle={onUpdateChatTitle}
-          detailedMode={detailedMode}
-          onToggleDetailedMode={onToggleDetailedMode}
+          fastMode={fastMode}
+          onToggleFastMode={onToggleFastMode}
           className="chat-sidebar"
         />
       )}
@@ -56,7 +56,7 @@ export function ChatWidget({
             <ChatMessage
               key={message.id}
               message={message}
-              detailed={detailedMode}
+              detailed={fastMode}
               onCopy={onCopyMessage}
               onFeedback={onMessageFeedback}
               className={messageClassName}

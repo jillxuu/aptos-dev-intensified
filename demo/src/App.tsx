@@ -11,7 +11,7 @@ function ChatWidgetContainer() {
     isGenerating = false,
     isTyping = false,
     hasMoreMessages = false,
-    detailedMode = false,
+    fastMode = false,
     chats = [],
     currentChatId,
     stopGenerating,
@@ -22,7 +22,7 @@ function ChatWidgetContainer() {
     selectChat,
     deleteChat,
     updateChatTitle,
-    setDetailedMode,
+    setFastMode,
   } = useChatbot();
 
   return (
@@ -33,7 +33,7 @@ function ChatWidgetContainer() {
       isGenerating={isGenerating}
       isTyping={isTyping}
       hasMoreMessages={hasMoreMessages}
-      detailedMode={detailedMode}
+      fastMode={fastMode}
       showSidebar={true}
       onStopGenerating={stopGenerating}
       onLoadMore={loadPreviousMessages}
@@ -45,7 +45,7 @@ function ChatWidgetContainer() {
       onSelectChat={selectChat}
       onDeleteChat={deleteChat}
       onUpdateChatTitle={updateChatTitle}
-      onToggleDetailedMode={setDetailedMode}
+      onToggleFastMode={setFastMode}
       className="h-full"
     />
   );

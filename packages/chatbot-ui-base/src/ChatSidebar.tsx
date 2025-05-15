@@ -8,8 +8,8 @@ export function ChatSidebar({
   onSelectChat,
   onDeleteChat,
   onUpdateChatTitle,
-  detailedMode,
-  onToggleDetailedMode,
+  fastMode,
+  onToggleFastMode,
   className = '',
 }: ChatSidebarProps): ReactElement {
   return (
@@ -64,10 +64,10 @@ export function ChatSidebar({
           <label className="detailed-mode-toggle">
             <input
               type="checkbox"
-              checked={detailedMode}
-              onChange={e => onToggleDetailedMode?.(e.target.checked)}
+              checked={fastMode}
+              onChange={e => onToggleFastMode?.(e.target.checked)}
             />
-            Detailed Mode
+            Fast Mode
           </label>
         </div>
         <button onClick={onNewChat} className="new-chat-button">

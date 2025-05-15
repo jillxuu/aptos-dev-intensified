@@ -3,6 +3,7 @@ import { type Message, type Chat } from '@aptos/chatbot-core';
 export interface ChatMessageProps {
   message: Message;
   detailed?: boolean;
+  fastMode?: boolean;
   onCopy?: (messageId: string) => void;
   onFeedback?: (messageId: string, feedback: 'positive' | 'negative') => void;
   className?: string;
@@ -23,8 +24,8 @@ export interface ChatSidebarProps {
   onSelectChat?: (chatId: string) => void;
   onDeleteChat?: (chatId: string) => void;
   onUpdateChatTitle?: (chatId: string, title: string) => void;
-  detailedMode?: boolean;
-  onToggleDetailedMode?: (enabled: boolean) => void;
+  fastMode?: boolean;
+  onToggleFastMode?: (enabled: boolean) => void;
   className?: string;
 }
 
@@ -34,7 +35,7 @@ export interface ChatWidgetProps {
   isGenerating?: boolean;
   isTyping?: boolean;
   hasMoreMessages?: boolean;
-  detailedMode?: boolean;
+  fastMode?: boolean;
   showSidebar?: boolean;
   onSendMessage: (message: string) => void;
   onStopGenerating?: () => void;
@@ -50,5 +51,5 @@ export interface ChatWidgetProps {
   onSelectChat?: (chatId: string) => void;
   onDeleteChat?: (chatId: string) => void;
   onUpdateChatTitle?: (chatId: string, title: string) => void;
-  onToggleDetailedMode?: (enabled: boolean) => void;
+  onToggleFastMode?: (enabled: boolean) => void;
 }

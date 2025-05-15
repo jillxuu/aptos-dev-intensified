@@ -15,7 +15,7 @@ export interface ChatWidgetProps {
   className?: string;
   inputClassName?: string;
   messageClassName?: string;
-  detailedMode?: boolean;
+  fastMode?: boolean;
   showSidebar?: boolean;
   // Chat history props
   chats?: Chat[];
@@ -23,5 +23,9 @@ export interface ChatWidgetProps {
   onSelectChat?: (chatId: string) => void;
   onDeleteChat?: (chatId: string) => void;
   onUpdateChatTitle?: (chatId: string, title: string) => void;
-  onToggleDetailedMode?: (enabled: boolean) => void;
-} 
+  onToggleFastMode?: (enabled: boolean) => void;
+}
+
+export interface ChatContextState {
+  fastMode?: boolean;
+}

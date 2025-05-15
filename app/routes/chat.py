@@ -21,7 +21,12 @@ import asyncio
 import re
 from fastapi import BackgroundTasks
 import json
-from app.config import get_docs_url, DOCS_BASE_URLS, DEFAULT_PROVIDER, USE_MULTI_STEP_RAG
+from app.config import (
+    get_docs_url,
+    DOCS_BASE_URLS,
+    DEFAULT_PROVIDER,
+    USE_MULTI_STEP_RAG,
+)
 from app.path_registry import path_registry
 
 # Configure logging
@@ -446,7 +451,6 @@ async def get_or_create_chat_history(
             await firestore_chat.update_chat_history(chat_history)
             return chat_history
 
-
         # Generate a title for the chat
         chat_title = (
             chat_request.content[:50] + "..."
@@ -504,7 +508,9 @@ async def get_or_create_chat_history(
         return chat_history
 
     except Exception as e:
-        logger.error(f"[ChatAPI] Error in get_or_create_chat_history: {e}", exc_info=True)
+        logger.error(
+            f"[ChatAPI] Error in get_or_create_chat_history: {e}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -514,7 +520,7 @@ async def generate_ai_response(
     firestore_chat: FirestoreChat,
     background_tasks: BackgroundTasks,
     rag_provider: str = None,
-    use_multi_step: bool = USE_MULTI_STEP_RAG,  # Use config setting as default
+    use_multi_step: Optional[bool] = None,  # Now optional to handle frontend override
 ) -> AsyncGenerator[str, None]:
     """
     Generate AI response using RAG.
@@ -525,12 +531,13 @@ async def generate_ai_response(
         firestore_chat: The Firestore chat instance
         background_tasks: FastAPI background tasks
         rag_provider: The RAG provider to use
-        use_multi_step: Whether to use multi-step retrieval
-
-    Returns:
-        An async generator that yields chunks of the AI response
+        use_multi_step: Whether to use multi-step retrieval, overridden by frontend's fast mode selection
     """
     try:
+        # If use_multi_step is None (not set by frontend), use the config default
+        if use_multi_step is None:
+            use_multi_step = USE_MULTI_STEP_RAG
+
         # Track generation start time
         generation_start_time = datetime.now()
 
@@ -595,11 +602,11 @@ async def generate_ai_response(
         context_retrieval_start = datetime.now()
         logger.info("[RAG] Retrieving relevant context...")
         context_chunks = await rag_provider_obj.get_relevant_context(
-            message, 
-            k=7, 
-            include_series=is_process_query, 
+            message,
+            k=7,
+            include_series=is_process_query,
             provider_type=provider_name,
-            use_multi_step=use_multi_step  # Enable adaptive multi-step retrieval
+            use_multi_step=use_multi_step,  # Enable adaptive multi-step retrieval
         )
         context_retrieval_time = (
             datetime.now() - context_retrieval_start
@@ -870,8 +877,10 @@ async def unified_chat_message_stream(
     Returns a streaming response with the assistant's message.
     The chat_id is included in the X-Chat-ID response header.
     """
-    logger.info(f"[ChatAPI] Received message request: chat_id={chat_request.chat_id}, client_id={chat_request.client_id}")
-    
+    logger.info(
+        f"[ChatAPI] Received message request: chat_id={chat_request.chat_id}, client_id={chat_request.client_id}"
+    )
+
     # First try to get existing chat if chat_id is provided
     chat_id = chat_request.chat_id
     if chat_id:
@@ -883,7 +892,7 @@ async def unified_chat_message_stream(
             logger.warning(f"[ChatAPI] Chat ID provided but not found: {chat_id}")
             # If chat_id was provided but not found, we'll create a new one
             chat_id = None
-    
+
     # Generate new chat ID only if we don't have a valid existing one
     if not chat_id:
         chat_id = f"chat-{uuid.uuid4()}"

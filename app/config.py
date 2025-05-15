@@ -10,7 +10,11 @@ PROVIDER_TYPES = Literal["developer-docs", "aptos-learn"]
 DEFAULT_PROVIDER = os.getenv("DEFAULT_RAG_PROVIDER", "developer-docs")
 
 # Default setting for multi-step retrieval
-USE_MULTI_STEP_RAG = os.getenv("USE_MULTI_STEP_RAG", "True").lower() in ["true", "1", "yes"]
+USE_MULTI_STEP_RAG = os.getenv("USE_MULTI_STEP_RAG", "True").lower() in [
+    "true",
+    "1",
+    "yes",
+]
 
 # Base paths for different documentation sources
 DOC_BASE_PATHS: Dict[str, str] = {

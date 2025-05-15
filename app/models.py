@@ -291,7 +291,9 @@ class ChatMessageRequest(BaseModel):
         None  # If not provided, will use DEFAULT_RAG_PROVIDER from server config
     )
     temperature: Optional[float] = 0.1  # Set temperature to 0.1
-    use_multi_step: Optional[bool] = USE_MULTI_STEP_RAG  # Use the global config setting
+    use_multi_step: Optional[bool] = (
+        None  # Will be overridden by frontend's fast mode selection
+    )
 
 
 class ChatMessageResponse(BaseModel):
@@ -1954,7 +1956,7 @@ class UnifiedChatRequest(BaseModel):
         None,
         description="Unique identifier for the message (generated if not provided)",
     )
-    use_multi_step: bool = Field(
-        USE_MULTI_STEP_RAG, 
-        description="Whether to use multi-step adaptive retrieval (defaults to configuration setting)"
+    use_multi_step: Optional[bool] = Field(
+        None,
+        description="Whether to use multi-step adaptive retrieval (overridden by frontend's fast mode selection)",
     )

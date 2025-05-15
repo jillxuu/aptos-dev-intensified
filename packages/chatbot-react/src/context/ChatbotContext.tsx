@@ -16,7 +16,7 @@ export interface ChatContextState {
   isGenerating: boolean;
   isTyping: boolean;
   hasMoreMessages: boolean;
-  detailedMode: boolean;
+  fastMode: boolean;
 
   // Modal State
   isOpen: boolean;
@@ -44,7 +44,7 @@ export interface ChatContextState {
   // Configuration
   config: ChatbotConfig;
   updateConfig: (newConfig: Partial<ChatbotConfig>) => void;
-  setDetailedMode: (enabled: boolean) => void;
+  setFastMode: (enabled: boolean) => void;
 }
 
 const DEFAULT_CONTEXT: ChatContextState = {
@@ -58,7 +58,7 @@ const DEFAULT_CONTEXT: ChatContextState = {
   isGenerating: false,
   isTyping: false,
   hasMoreMessages: false,
-  detailedMode: false,
+  fastMode: false,
   isOpen: false,
   openChat: () => {},
   closeChat: () => {},
@@ -76,7 +76,7 @@ const DEFAULT_CONTEXT: ChatContextState = {
   loadChats: async () => {},
   config: { apiKey: '', apiUrl: '' },
   updateConfig: () => {},
-  setDetailedMode: () => {},
+  setFastMode: () => {},
 };
 
 export const ChatbotContext = createContext<ChatContextState>(DEFAULT_CONTEXT);
@@ -116,7 +116,7 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
-  const [detailedMode, setDetailedMode] = useState(initialConfig.detailedMode ?? false);
+  const [fastMode, setFastMode] = useState(initialConfig.fastMode ?? false);
   const [isOpen, setIsOpen] = useState(false);
   const [config, setConfig] = useState(initialConfig);
 
@@ -138,14 +138,6 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
       setIsLoadingChats(true);
       const response = await clientRef.current.listChats();
       // Check for duplicate chat IDs
-      const chatIds = new Set();
-      const duplicates = response.filter(chat => {
-        if (chatIds.has(chat.id)) {
-          return true;
-        }
-        chatIds.add(chat.id);
-        return false;
-      });
       setChats(response);
     } catch (err) {
       console.error('Error loading chats:', err);
@@ -203,7 +195,7 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
           role: 'user',
           timestamp: new Date().toISOString(),
         };
-        
+
         // Update both messages and chats state
         setMessages(prev => [...prev, message]);
         if (currentChatId) {
@@ -249,16 +241,23 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
               };
               setMessages(prev => [...prev, assistantMessage]);
               if (currentChatId) {
-                setChats(prev => updateChatMessages(prev, currentChatId, [...messages, message, assistantMessage]));
+                setChats(prev =>
+                  updateChatMessages(prev, currentChatId, [...messages, message, assistantMessage]),
+                );
               }
               isFirstChunk = false;
             } else {
               setMessages(prev => {
                 const lastMessage = prev[prev.length - 1];
                 if (lastMessage.id === assistantMessageId) {
-                  const updatedMessages = [...prev.slice(0, -1), { ...lastMessage, content: responseText }];
+                  const updatedMessages = [
+                    ...prev.slice(0, -1),
+                    { ...lastMessage, content: responseText },
+                  ];
                   if (currentChatId) {
-                    setChats(prevChats => updateChatMessages(prevChats, currentChatId, updatedMessages));
+                    setChats(prevChats =>
+                      updateChatMessages(prevChats, currentChatId, updatedMessages),
+                    );
                   }
                   return updatedMessages;
                 }
@@ -427,10 +426,10 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
   }, []);
 
   // Configuration
-  const setDetailedModeCallback = useCallback(
+  const setFastModeCallback = useCallback(
     (enabled: boolean) => {
-      setDetailedMode(enabled);
-      updateConfig({ detailedMode: enabled });
+      setFastMode(enabled);
+      updateConfig({ fastMode: enabled });
     },
     [updateConfig],
   );
@@ -448,7 +447,7 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
         isGenerating,
         isTyping,
         hasMoreMessages,
-        detailedMode,
+        fastMode,
         isOpen,
         openChat,
         closeChat,
@@ -466,7 +465,7 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
         loadChats,
         config,
         updateConfig,
-        setDetailedMode: setDetailedModeCallback,
+        setFastMode: setFastModeCallback,
       }}
     >
       {children}

@@ -29,7 +29,8 @@ export interface ChatbotConfig {
   apiUrl: string;
   clientId?: string;
   ragProvider?: RagProvider;
-  detailedMode?: boolean;
+  githubRepo?: string;
+  fastMode?: boolean;
 }
 
 // API request types

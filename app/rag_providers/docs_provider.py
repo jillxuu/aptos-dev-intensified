@@ -168,14 +168,14 @@ class DocsRAGProvider(RAGProvider):
         """
         Get relevant context from the documentation using topic-based retrieval.
         Now supports adaptive multi-step retrieval for improved results.
-        
+
         Args:
             query: The user query
             k: Number of top documents to return
             include_series: Whether to include related documents from the same topic
             provider_type: Optional provider type to use for this query
             use_multi_step: Whether to use multi-step retrieval
-            
+
         Returns:
             List of dictionaries containing content, section, source, and metadata
         """
@@ -183,7 +183,7 @@ class DocsRAGProvider(RAGProvider):
         logger.info(
             f"[DOCS-RAG] Parameters: k={k}, include_series={include_series}, provider_type={provider_type}, use_multi_step={use_multi_step}"
         )
-        
+
         if not self._initialized:
             logger.warning("[DOCS-RAG] Provider not initialized - cannot proceed")
             return []
@@ -220,7 +220,7 @@ class DocsRAGProvider(RAGProvider):
                     query=query,
                     vector_store=self.vector_store,
                     enhanced_chunks=self.enhanced_chunks,
-                    k=k
+                    k=k,
                 )
             else:
                 # Use the existing topic-aware retrieval
@@ -229,12 +229,10 @@ class DocsRAGProvider(RAGProvider):
                     query=query,
                     vector_store=self.vector_store,
                     enhanced_chunks=self.enhanced_chunks,
-                    k=k
+                    k=k,
                 )
-            
-            logger.info(
-                f"[DOCS-RAG] Retrieved {len(results)} results"
-            )
+
+            logger.info(f"[DOCS-RAG] Retrieved {len(results)} results")
 
             # Format results
             formatted_results = []

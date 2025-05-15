@@ -97,6 +97,7 @@ export class ChatbotClient {
       role: 'user',
       temperature: 0.7,
       rag_provider: this.config.ragProvider || 'developer-docs',
+      use_multi_step: !this.config.fastMode,
       ...(options?.messageId && { message_id: options.messageId }),
       ...(chatId && { chat_id: chatId }),
     };
