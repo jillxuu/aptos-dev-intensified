@@ -7,6 +7,7 @@ This document outlines the architecture for a flexible RAG (Retrieval-Augmented 
 ### Current Limitations
 
 Our RAG system currently serves a single use case (developer documentation site) with:
+
 - Fixed retrieval parameters
 - Standardized prompting strategy
 - Single latency vs. accuracy optimization point
@@ -59,7 +60,7 @@ graph TD
     classDef serviceLayer fill:#eeeefc,stroke:#333,stroke-width:1px,color:#333,font-weight:bold,font-size:14px
     classDef adapter fill:#d5f5e3,stroke:#333,stroke-width:1px,color:#333,font-weight:bold,font-size:14px
     classDef application fill:#fdebd0,stroke:#333,stroke-width:1px,color:#333,font-weight:bold,font-size:14px
-    
+
     %% Core Platform Layer
     subgraph CorePlatform["RAG Core Platform"]
         direction LR
@@ -67,27 +68,27 @@ graph TD
         VectorStore["Vector Store Interfaces"]
         Embedding["Embedding Pipeline"]
         LLMService["LLM Service Interface"]
-        
+
         ChunkStore <--> VectorStore
         VectorStore <--> Embedding
         Embedding <--> LLMService
     end
-    
+
     %% Service Layer (instead of Middleware)
     subgraph ServiceLayer["Service Layer"]
         direction LR
         Profiles["Application Profiles"]
         Retrieval["Retrieval Strategies"]
         Response["Response Generators"]
-        
+
         Profiles --> Retrieval
         Retrieval --> Response
         Profiles --> Response
     end
-    
+
     %% Connect Core to Service Layer
     CorePlatform --> ServiceLayer
-    
+
     %% Adapter Layer
     subgraph ApplicationAdapters["Application Adapters"]
         direction LR
@@ -99,10 +100,10 @@ graph TD
         SlackAdapter["Slack App Adapter"]
         StandaloneAdapter["Standalone General Purpose Bot Adapter"]
     end
-    
+
     %% Connect Service Layer to Adapters
     ServiceLayer --> ApplicationAdapters
-    
+
     %% Applications Layer
     DocSite["Documentation Site Interface"]
     GitHub["GitHub Discussions Q&A Bot"]
@@ -111,7 +112,7 @@ graph TD
     Telegram["Telegram Q&A Bot"]
     Slack["Slack Q&A Bot"]
     Standalone["Standalone General Purpose Bot"]
-    
+
     %% Connect Adapters to Applications
     DevDocAdapter --> DocSite
     GitHubDiscussionsAdapter --> GitHub
@@ -120,13 +121,13 @@ graph TD
     TelegramAdapter --> Telegram
     SlackAdapter --> Slack
     StandaloneAdapter --> Standalone
-    
+
     %% Apply styles
     class ChunkStore,VectorStore,Embedding,LLMService coreComponent
     class Profiles,Retrieval,Response serviceLayer
     class DevDocAdapter,GitHubDiscussionsAdapter,APIAdapter,AptosMCPAdapter,TelegramAdapter,SlackAdapter,StandaloneAdapter adapter
     class DocSite,GitHub,API,AptosMCP,Telegram,Slack,Standalone application
-    
+
     %% Add labels for clarity
     CoreLabel["Core Infrastructure"] -.-> CorePlatform
     ServiceLabel["Application Logic & Strategies"] -.-> ServiceLayer
@@ -158,17 +159,17 @@ Application profiles configure how the system behaves for each downstream applic
     {
       "source_id": "aptos_docs",
       "weight": 1.0,
-      "filter": {"doc_type": ["reference", "guide", "tutorial"]}
+      "filter": { "doc_type": ["reference", "guide", "tutorial"] }
     },
     {
       "source_id": "github_issues",
       "weight": 0.8,
-      "filter": {"status": "closed", "has_solution": true}
+      "filter": { "status": "closed", "has_solution": true }
     },
     {
       "source_id": "code_examples",
       "weight": 0.9,
-      "filter": {"language": "move", "category": ["smart_contract", "transaction"]}
+      "filter": { "language": "move", "category": ["smart_contract", "transaction"] }
     }
   ],
   "response_generation": {
@@ -193,12 +194,14 @@ Application profiles configure how the system behaves for each downstream applic
 The system supports multiple retrieval strategies that can be configured per application:
 
 1. **Speed-Optimized**
+
    - Single-pass retrieval
    - Smaller embedding models
    - Cached embeddings
    - Fixed small k
 
 2. **Accuracy-Optimized**
+
    - Multi-step retrieval with follow-ups
    - Hybrid sparse+dense retrieval
    - Re-ranking with cross-encoders
@@ -214,12 +217,14 @@ The system supports multiple retrieval strategies that can be configured per app
 Specialized templates for different application contexts:
 
 1. **Documentation Site**
+
    - Rich HTML formatting
    - Inline navigation links
    - Expandable code examples
    - "Read more" deep links
 
 2. **GitHub Discussions**
+
    - Markdown-optimized
    - Code block formatting
    - Reference linking to both docs and other issues
@@ -238,24 +243,24 @@ class ContextualPromptManager:
     def __init__(self, profile_id):
         self.profile = load_profile(profile_id)
         self.prompt_templates = load_templates(profile_id)
-        
+
     def generate_system_prompt(self, context_data):
         base_prompt = self.prompt_templates["system_base"]
-        
+
         # Add application-specific instructions
         if self.profile["type"] == "github_discussions":
             base_prompt += self.prompt_templates["github_specific"]
-            
+
             # Add repo-specific context if available
             if "repository" in context_data:
                 repo_info = fetch_repo_metadata(context_data["repository"])
                 base_prompt += f"\nThis question is about the {repo_info['name']} repository, which is {repo_info['description']}."
-        
+
         # Add response style guidance
         base_prompt += self.prompt_templates["response_style"][self.profile["response_style"]]
-        
+
         return base_prompt
-        
+
     def generate_retrieval_prompt(self, query, retrieved_docs):
         # Select template based on number and quality of retrieved docs
         if len(retrieved_docs) > 10:
@@ -264,7 +269,7 @@ class ContextualPromptManager:
             template = self.prompt_templates["limited_evidence"]
         else:
             template = self.prompt_templates["standard_retrieval"]
-            
+
         # Populate template with docs and query
         return template.format(query=query, documents=format_documents(retrieved_docs))
 ```
@@ -293,21 +298,21 @@ This interface allows for vastly different implementations depending on provider
 ```python
 class LLMServiceInterface:
     """Interface for all LLM service implementations"""
-    
-    async def generate_response(self, 
-                               prompt: str, 
-                               context: dict = None, 
+
+    async def generate_response(self,
+                               prompt: str,
+                               context: dict = None,
                                parameters: dict = None) -> LLMResponse:
         """Generate a response using the provider's implementation"""
         raise NotImplementedError()
-    
-    async def generate_with_retrieval(self, 
-                                     query: str, 
-                                     retrieval_strategy: RetrievalStrategy, 
+
+    async def generate_with_retrieval(self,
+                                     query: str,
+                                     retrieval_strategy: RetrievalStrategy,
                                      parameters: dict = None) -> LLMResponse:
         """Generate a response with integrated retrieval capabilities"""
         raise NotImplementedError()
-        
+
     def get_capabilities(self) -> dict:
         """Return the capabilities of this LLM service implementation"""
         raise NotImplementedError()
@@ -320,7 +325,7 @@ Each provider can have custom implementations while maintaining the same interfa
 ```python
 class OpenAICompletionService(LLMServiceInterface):
     """Simple OpenAI completion implementation"""
-    
+
     async def generate_response(self, prompt, context=None, parameters=None):
         # Direct API call implementation
         response = await openai.ChatCompletion.create(
@@ -333,15 +338,15 @@ class OpenAICompletionService(LLMServiceInterface):
 
 class FunctionCallingAgentService(LLMServiceInterface):
     """Complex implementation with function-calling capabilities"""
-    
+
     async def generate_response(self, prompt, context=None, parameters=None):
         # Initialize conversation with available functions
         conversation = self._build_initial_conversation(prompt, context)
         functions = self._get_available_functions(parameters)
-        
+
         # Run the agent loop
         return await self._run_agent_loop(conversation, functions, parameters)
-    
+
     async def _run_agent_loop(self, conversation, functions, parameters):
         # Implementation of complex agent-based interaction
         # with function calling, multiple steps, etc.
@@ -395,13 +400,13 @@ class StandardRAGService(LLMServiceInterface):
     async def generate_with_retrieval(self, query, retrieval_strategy, parameters=None):
         # First retrieve relevant documents
         documents = await self.retriever.retrieve(query, retrieval_strategy)
-        
+
         # Then format documents into context
         formatted_context = self._format_documents(documents)
-        
+
         # Build prompt with context
         prompt = self._build_prompt_with_context(query, formatted_context)
-        
+
         # Call LLM with prepared prompt
         return await self.generate_response(prompt, parameters=parameters)
 ```
@@ -419,12 +424,12 @@ class LLMControlledRetrievalService(LLMServiceInterface):
     async def generate_with_retrieval(self, query, retrieval_strategy, parameters=None):
         # Initialize conversation
         conversation = [{"role": "user", "content": query}]
-        
+
         # Define retrieval function
         async def retrieve_documents(query, k=5):
             documents = await self.retriever.retrieve(query, k=k)
             return self._format_documents(documents)
-        
+
         # Make retrieval function available to LLM
         functions = [
             {
@@ -440,7 +445,7 @@ class LLMControlledRetrievalService(LLMServiceInterface):
                 }
             }
         ]
-        
+
         # Let LLM control the retrieval process
         return await self._run_llm_controlled_process(conversation, functions, parameters)
 ```
@@ -455,7 +460,7 @@ class LLMServiceFactory:
     def create_service(profile):
         """Create LLM service based on application profile"""
         service_config = profile.get_llm_service_config()
-        
+
         if service_config.implementation == "OpenAICompletionService":
             return OpenAICompletionService(**service_config.parameters)
         elif service_config.implementation == "FunctionCallingAgentService":
@@ -476,6 +481,7 @@ class LLMServiceFactory:
 The system includes several standard implementation patterns:
 
 ##### Single-Call Pattern
+
 For simpler use cases where one LLM call with context is sufficient:
 
 ```python
@@ -486,6 +492,7 @@ result = await llm_service.generate_response(
 ```
 
 ##### Multi-Step Reasoning Pattern
+
 For complex problems requiring step-by-step thinking:
 
 ```python
@@ -503,6 +510,7 @@ result = await llm_service.generate_response(
 ```
 
 ##### Self-Query Refinement Pattern
+
 For cases where the LLM should refine its own retrieval:
 
 ```python
@@ -528,11 +536,13 @@ follow_up_queries = await llm_service.generate_response(
 A runtime that adapts retrieval and response strategies based on real-time signals:
 
 1. **Query Classification**
+
    - Identify query type (how-to, concept, error, etc.)
    - Adjust retrieval parameters accordingly
    - Select appropriate LLM for the task
 
 2. **Latency Management**
+
    - Monitor execution time at each step
    - Skip optional steps when approaching latency threshold
    - Degrade gracefully (return partial results when needed)
@@ -546,39 +556,39 @@ A runtime that adapts retrieval and response strategies based on real-time signa
 def adaptive_rag_pipeline(query, profile_id, context=None):
     # Load application profile
     profile = load_profile(profile_id)
-    
+
     # Classify query to adjust strategy
     query_type = classify_query(query)
-    
+
     # Initialize strategy with profile settings
     strategy = RetrievalStrategy.from_profile(profile, query_type)
-    
+
     # Start tracking execution metrics
     metrics = ExecutionMetrics()
-    
+
     # Phase 1: Initial retrieval
     with metrics.track("initial_retrieval"):
         initial_results = run_retrieval(query, strategy.initial_k, profile.data_sources)
-    
+
     # Check if we're approaching latency limits
     if metrics.current_latency > profile.performance_targets.warning_threshold:
         # Skip enhancements if we're running long
         strategy.disable_enhancements()
-    
+
     # Phase 2: Conditional follow-ups
     enhanced_results = initial_results
     if strategy.follow_up_enabled and confidence_below_threshold(initial_results):
         with metrics.track("follow_up_retrieval"):
             enhanced_results = run_follow_up_queries(query, initial_results, strategy)
-    
+
     # Phase 3: Generate response with appropriate template and model
     with metrics.track("response_generation"):
         response_generator = ResponseGenerator.from_profile(profile, query_type)
         response = response_generator.generate(query, enhanced_results, context)
-    
+
     # Record execution metrics for optimization
     record_execution(profile_id, query, metrics)
-    
+
     return response, metrics
 ```
 
@@ -592,7 +602,7 @@ def adaptive_rag_pipeline(query, profile_id, context=None):
 │   ├── core/                   # Core RAG engine components
 │   │   ├── chunk_store/        # Chunk storage management
 │   │   │   ├── __init__.py
-│   │   │   ├── interfaces.py   # Abstract interfaces 
+│   │   │   ├── interfaces.py   # Abstract interfaces
 │   │   │   ├── firestore.py    # Firestore implementation
 │   │   │   └── local.py        # Local storage implementation
 │   │   │
@@ -718,11 +728,13 @@ def adaptive_rag_pipeline(query, profile_id, context=None):
 The relationship between data sources and chunking works as follows:
 
 1. **processors/chunking/** contains general-purpose chunking algorithms:
+
    - Basic chunking algorithms (sliding window, recursive, token-aware)
    - Common utilities for text processing
    - Interface definitions for chunking strategies
 
 2. **data_sources/[source]/chunking.py** contains source-specific chunking implementations:
+
    - Each data source defines its own chunking strategy tailored to its content type
    - These implementations can use the general algorithms from processors/chunking as building blocks
    - Source-specific chunking handles unique aspects of that content type:
@@ -731,6 +743,7 @@ The relationship between data sources and chunking works as follows:
      - Conversations may need thread-aware chunking that preserves dialogue context
 
 3. **Chunking flow example** for GitHub repositories:
+
    ```
    1. data_sources/github_repos/ingestion.py fetches raw content from repos
    2. data_sources/github_repos/code_chunking.py processes code files:
@@ -750,6 +763,7 @@ The relationship between data sources and chunking works as follows:
 ### GitHub Discussions
 
 1. **Integration Patterns**
+
    - GitHub App/Action triggered on new discussions
    - Async response posting with edit support
    - User feedback collection via reactions
@@ -811,6 +825,7 @@ Example Configuration:
 ### API Service
 
 1. **Interface Design**
+
    - Synchronous and asynchronous endpoints
    - Structured JSON responses
    - Parameter customization
@@ -829,11 +844,13 @@ Example Configuration:
 Implement multi-level caching to balance performance and freshness:
 
 1. **Query Result Caching**
+
    - Cache frequent queries with configurable TTL
    - Application-specific cache policies
    - Invalidation hooks for content updates
 
 2. **Embedding Caching**
+
    - Cache embeddings for common queries
    - Share embedding cache across applications
    - Versioned cache for model updates
@@ -848,14 +865,17 @@ Implement multi-level caching to balance performance and freshness:
 Implement graph-based retrieval to enhance the quality of results:
 
 1. **Structural Relationships**
+
    - Parent-child document relationships
    - Section hierarchies within documents
 
 2. **Semantic Relationships**
+
    - Related concepts and topics
    - Similar code examples or patterns
 
 3. **Sequential Relationships**
+
    - Previous/next steps in tutorials
    - Prerequisite concepts
 
@@ -866,11 +886,13 @@ Implement graph-based retrieval to enhance the quality of results:
 ## Evaluation Framework
 
 1. **Shared Test Suite**
+
    - Core retrieval quality benchmarks
    - Response accuracy metrics
    - Performance and latency tests
 
 2. **Application-Specific Tests**
+
    - GitHub response format validation
    - API contract compliance
    - Documentation site rendering tests
@@ -885,21 +907,25 @@ Implement graph-based retrieval to enhance the quality of results:
 To migrate from the current implementation to this architecture:
 
 1. **Refactor Core Components**
+
    - Move relevant code from `utils/topic_chunks.py` to appropriate modules in `chunk_store/` and `vector_store/`
    - Move code from `utils/vector_store_utils.py` to `vector_store/query.py` and `embedding/` modules
    - Move adaptive retrieval logic from `utils/adaptive_retrieval.py` to `processors/retrieval/adaptive.py`
 
 2. **Extract General Chunking Algorithms**
+
    - Identify common chunking patterns in the current code
    - Move them to `processors/chunking/` as reusable algorithms
    - Create appropriate interfaces in `processors/chunking/base.py`
 
 3. **Implement Source-Specific Chunking**
+
    - Create data source modules with their own chunking implementations
    - Each implementation should use the general algorithms as building blocks
    - Add source-specific optimizations for each content type
 
 4. **Implement Application Profiles**
+
    - Create the profile schema based on current configuration patterns
    - Define default profiles matching current behavior
    - Add profile loading and management logic
@@ -919,4 +945,4 @@ By refactoring our RAG system into a platform with modular components and applic
 4. Application-specific prompt engineering and response formatting
 5. Comprehensive monitoring and continuous improvement
 
-This architecture provides a scalable foundation for extending our RAG capabilities to new use cases without duplicating core functionality, while allowing each application to benefit from improvements to the shared platform. 
+This architecture provides a scalable foundation for extending our RAG capabilities to new use cases without duplicating core functionality, while allowing each application to benefit from improvements to the shared platform.

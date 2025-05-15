@@ -31,6 +31,8 @@ export interface ChatSidebarProps {
 export interface ChatWidgetProps {
   messages: Message[];
   isLoading?: boolean;
+  isGenerating?: boolean;
+  isTyping?: boolean;
   hasMoreMessages?: boolean;
   detailedMode?: boolean;
   showSidebar?: boolean;

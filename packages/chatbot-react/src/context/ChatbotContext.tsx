@@ -6,11 +6,14 @@ export interface ChatContextState {
   // Connection State
   isLoading: boolean;
   error: Error | null;
+  isLoadingChats: boolean;
+  isLoadingMoreMessages: boolean;
 
   // Chat State
   currentChatId: string | null;
   chats: Chat[];
   messages: Message[];
+  isGenerating: boolean;
   isTyping: boolean;
   hasMoreMessages: boolean;
   detailedMode: boolean;
@@ -47,9 +50,12 @@ export interface ChatContextState {
 const DEFAULT_CONTEXT: ChatContextState = {
   isLoading: false,
   error: null,
+  isLoadingChats: false,
+  isLoadingMoreMessages: false,
   currentChatId: null,
   chats: [],
   messages: [],
+  isGenerating: false,
   isTyping: false,
   hasMoreMessages: false,
   detailedMode: false,
@@ -81,6 +87,16 @@ interface ChatbotProviderProps {
   onError?: (error: Error) => void;
 }
 
+// Add this helper function before the ChatbotProvider component
+const updateChatMessages = (chats: Chat[], chatId: string, messages: Message[]): Chat[] => {
+  return chats.map(chat => {
+    if (chat.id === chatId) {
+      return { ...chat, messages, lastMessage: messages[messages.length - 1]?.content };
+    }
+    return chat;
+  });
+};
+
 export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
   config: initialConfig,
   children,
@@ -91,10 +107,13 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
 
   // State
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingChats, setIsLoadingChats] = useState(false);
+  const [isLoadingMoreMessages, setIsLoadingMoreMessages] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [detailedMode, setDetailedMode] = useState(initialConfig.detailedMode ?? false);
@@ -106,7 +125,6 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
 
   // Configuration
   const updateConfig = useCallback((newConfig: Partial<ChatbotConfig>) => {
-    console.log('Updating config:', newConfig);
     setConfig(prev => {
       const updated = { ...prev, ...newConfig };
       clientRef.current.updateConfig(updated);
@@ -116,32 +134,37 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
 
   // Chat operations
   const loadChats = useCallback(async () => {
-    console.log('loadChats called, attempting to fetch chats');
     try {
-      console.log('Current client config:', clientRef.current.getConfig());
+      setIsLoadingChats(true);
       const response = await clientRef.current.listChats();
-      console.log('Received chats from backend:', response);
+      // Check for duplicate chat IDs
+      const chatIds = new Set();
+      const duplicates = response.filter(chat => {
+        if (chatIds.has(chat.id)) {
+          return true;
+        }
+        chatIds.add(chat.id);
+        return false;
+      });
       setChats(response);
     } catch (err) {
       console.error('Error loading chats:', err);
       const error = err as Error;
       setError(error);
       onError?.(error);
-      // Reset chats on error
       setChats([]);
+    } finally {
+      setIsLoadingChats(false);
     }
   }, [onError]);
 
   // Initialize clientId
   useEffect(() => {
-    console.log('Initializing clientId');
     const storedClientId = localStorage.getItem('clientId');
     if (storedClientId) {
-      console.log('Found stored clientId:', storedClientId);
       updateConfig({ clientId: storedClientId });
     } else {
       const newClientId = uuidv4();
-      console.log('Generated new clientId:', newClientId);
       localStorage.setItem('clientId', newClientId);
       updateConfig({ clientId: newClientId });
     }
@@ -149,12 +172,8 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
 
   // Load chats when clientId is available
   useEffect(() => {
-    console.log('Chat loading effect triggered. Current config:', config);
     if (config.clientId) {
-      console.log('ClientId available, loading chats for:', config.clientId);
       loadChats();
-    } else {
-      console.log('No clientId available yet, skipping chat load');
     }
   }, [config.clientId, loadChats]);
 
@@ -174,6 +193,9 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
       }
 
       try {
+        setIsGenerating(true);
+        setIsLoading(true);
+
         const messageId = `msg-${uuidv4()}`;
         const message: Message = {
           id: messageId,
@@ -181,89 +203,99 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
           role: 'user',
           timestamp: new Date().toISOString(),
         };
-
-        // If no current chat, create one first
-        let chatId = currentChatId;
-        if (!chatId) {
-          const newChat = await clientRef.current.createChat();
-          chatId = newChat.id;
-          setCurrentChatId(chatId);
-          await loadChats();
+        
+        // Update both messages and chats state
+        setMessages(prev => [...prev, message]);
+        if (currentChatId) {
+          setChats(prev => updateChatMessages(prev, currentChatId, [...messages, message]));
         }
 
-        // Add user message to the current chat
-        setMessages(prev => [...prev, message]);
-
-        // Create a new abort controller for this request
         const abortController = new AbortController();
         abortControllerRef.current = abortController;
 
-        // Add assistant's response placeholder
-        const assistantMessage: Message = {
-          id: `msg-${uuidv4()}`,
-          content: '',
-          role: 'assistant',
-          timestamp: new Date().toISOString(),
-        };
-        setMessages(prev => [...prev, assistantMessage]);
-
-        // Send message and get streaming response
-        const response = await clientRef.current.sendMessage(chatId, content, {
+        const response = await clientRef.current.sendMessage(currentChatId, content, {
           messageId,
           signal: abortController.signal,
         });
 
-        // Process streaming response
+        const headerChatId = response.headers.get('X-Chat-ID');
+        if (headerChatId && !currentChatId) {
+          setCurrentChatId(headerChatId);
+          await loadChats();
+        }
+
         if (response.body) {
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let responseText = '';
+          let assistantMessageId = `msg-${uuidv4()}`;
+          let isFirstChunk = true;
 
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
-            // Decode chunk and update assistant message
             const chunk = decoder.decode(value, { stream: true });
             responseText += chunk;
 
-            setMessages(prev => {
-              const lastMessage = prev[prev.length - 1];
-              if (lastMessage.role === 'assistant') {
-                return [...prev.slice(0, -1), { ...lastMessage, content: responseText }];
+            if (isFirstChunk) {
+              setIsGenerating(false);
+              setIsTyping(true);
+              const assistantMessage: Message = {
+                id: assistantMessageId,
+                content: responseText,
+                role: 'assistant',
+                timestamp: new Date().toISOString(),
+              };
+              setMessages(prev => [...prev, assistantMessage]);
+              if (currentChatId) {
+                setChats(prev => updateChatMessages(prev, currentChatId, [...messages, message, assistantMessage]));
               }
-              return prev;
-            });
+              isFirstChunk = false;
+            } else {
+              setMessages(prev => {
+                const lastMessage = prev[prev.length - 1];
+                if (lastMessage.id === assistantMessageId) {
+                  const updatedMessages = [...prev.slice(0, -1), { ...lastMessage, content: responseText }];
+                  if (currentChatId) {
+                    setChats(prevChats => updateChatMessages(prevChats, currentChatId, updatedMessages));
+                  }
+                  return updatedMessages;
+                }
+                return prev;
+              });
+            }
           }
 
-          // After message is fully processed, refresh the chat list
           await loadChats();
         }
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
-          // Ignore abort errors
           return;
         }
         const error = err as Error;
         setError(error);
         onError?.(error);
-        // Remove the last two messages on error
-        setMessages(prev => prev.slice(0, -2));
+        setMessages(prev => prev.slice(0, -1));
+        if (currentChatId) {
+          setChats(prev => updateChatMessages(prev, currentChatId, messages.slice(0, -1)));
+        }
       } finally {
         abortControllerRef.current = null;
         setIsLoading(false);
         setIsTyping(false);
+        setIsGenerating(false);
       }
     },
-    [currentChatId, onError, config.clientId, loadChats],
+    [currentChatId, messages, onError, config.clientId, loadChats],
   );
 
   // Chat management
   const createNewChat = useCallback(async () => {
     setIsLoading(true);
     try {
-      const chat = await clientRef.current.createChat();
-      setCurrentChatId(chat.id);
+      // Let the backend assign the chat ID through the first message
+      setCurrentChatId(null);
       setMessages([]);
       setHasMoreMessages(false);
 
@@ -283,7 +315,7 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
       setCurrentChatId(chatId);
       const chat = chats.find(c => c.id === chatId);
       if (chat) {
-        setMessages(chat.messages);
+        setMessages(chat.messages || []);
       }
     },
     [chats],
@@ -291,10 +323,10 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
 
   // History management
   const loadPreviousMessages = useCallback(async () => {
-    if (!currentChatId || isLoading || !hasMoreMessages) return;
+    if (!currentChatId || isLoading || !hasMoreMessages || isLoadingMoreMessages) return;
 
-    setIsLoading(true);
     try {
+      setIsLoadingMoreMessages(true);
       const firstMessage = messages[0];
       const response = await clientRef.current.getMessages(currentChatId, firstMessage?.id);
       setMessages(prev => [...response.messages, ...prev]);
@@ -304,9 +336,9 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
       setError(error);
       onError?.(error);
     } finally {
-      setIsLoading(false);
+      setIsLoadingMoreMessages(false);
     }
-  }, [currentChatId, isLoading, hasMoreMessages, messages, onError]);
+  }, [currentChatId, isLoading, hasMoreMessages, messages, onError, isLoadingMoreMessages]);
 
   // Chat operations
   const deleteChat = useCallback(
@@ -407,10 +439,13 @@ export const ChatbotProvider: React.FC<ChatbotProviderProps> = ({
     <ChatbotContext.Provider
       value={{
         isLoading,
+        isLoadingChats,
+        isLoadingMoreMessages,
         error,
         currentChatId,
         chats,
         messages,
+        isGenerating,
         isTyping,
         hasMoreMessages,
         detailedMode,

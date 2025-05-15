@@ -73,6 +73,7 @@ app.add_middleware(
     allow_credentials=True,  # Must be True for wildcard origin
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Chat-ID"],  # Explicitly expose our custom header
 )
 
 

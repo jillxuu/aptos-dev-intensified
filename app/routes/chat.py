@@ -394,72 +394,58 @@ async def get_or_create_chat_history(
 ) -> ChatHistory:
     """
     Get an existing chat history or create a new one if it doesn't exist.
-
-    Args:
-        chat_id: The ID of the chat to get or create
-        chat_request: The chat message request
-        firestore_chat: The Firestore chat instance
-
-    Returns:
-        The chat history
     """
     try:
-        # Check if the chat_id exists in the format "chat-uuid"
-        if chat_id.startswith("chat-"):
-            # Try to get the existing chat history
-            chat_history = await firestore_chat.get_chat_history(chat_id)
+        # Try to get the existing chat history first
+        chat_history = await firestore_chat.get_chat_history(chat_id)
 
-            # If the chat history exists, add the new message
-            if chat_history:
-                logger.info(f"Adding message to existing chat {chat_id}")
+        # If the chat history exists, add the new message
+        if chat_history:
 
-                # Use the rag provider from the request or from the chat history metadata
-                rag_provider_name = chat_request.rag_provider
-                if (
-                    not rag_provider_name
-                    and chat_history.metadata
-                    and "rag_provider" in chat_history.metadata
-                ):
-                    rag_provider_name = chat_history.metadata["rag_provider"]
-                if not rag_provider_name:
-                    rag_provider_name = DEFAULT_RAG_PROVIDER
+            # Use the rag provider from the request or from the chat history metadata
+            rag_provider_name = chat_request.rag_provider
+            if (
+                not rag_provider_name
+                and chat_history.metadata
+                and "rag_provider" in chat_history.metadata
+            ):
+                rag_provider_name = chat_history.metadata["rag_provider"]
+            if not rag_provider_name:
+                rag_provider_name = DEFAULT_RAG_PROVIDER
 
-                # Create a new message
-                new_message = ChatMessage(
-                    id=chat_request.message_id or str(uuid.uuid4()),
-                    role=chat_request.role,
-                    content=chat_request.content,
-                    timestamp=datetime.now().isoformat(),
-                    metadata={
-                        "client_id": chat_request.client_id,
-                        "rag_provider": rag_provider_name,
-                        "temperature": getattr(chat_request, "temperature", 0.7),
-                        "request_time": datetime.now().isoformat(),
-                    },
-                )
+            # Create a new message
+            new_message = ChatMessage(
+                id=chat_request.message_id or str(uuid.uuid4()),
+                role=chat_request.role,
+                content=chat_request.content,
+                timestamp=datetime.now().isoformat(),
+                metadata={
+                    "client_id": chat_request.client_id,
+                    "rag_provider": rag_provider_name,
+                    "temperature": getattr(chat_request, "temperature", 0.7),
+                    "request_time": datetime.now().isoformat(),
+                },
+            )
 
-                # Add the message to the chat history
-                chat_history.messages.append(new_message)
+            chat_history.messages.append(new_message)
 
-                # Add a placeholder for the assistant's response
-                assistant_message = ChatMessage(
-                    id=str(uuid.uuid4()),
-                    role="assistant",
-                    content="",  # Empty content as placeholder
-                    timestamp=datetime.now().isoformat(),
-                    metadata={
-                        "response_to": new_message.id,
-                        "rag_provider": rag_provider_name,
-                    },
-                )
-                chat_history.messages.append(assistant_message)
+            # Add a placeholder for the assistant's response
+            assistant_message = ChatMessage(
+                id=str(uuid.uuid4()),
+                role="assistant",
+                content="",  # Empty content as placeholder
+                timestamp=datetime.now().isoformat(),
+                metadata={
+                    "response_to": new_message.id,
+                    "rag_provider": rag_provider_name,
+                },
+            )
+            chat_history.messages.append(assistant_message)
 
-                # Update the chat history in the database
-                await firestore_chat.update_chat_history(chat_history)
-                return chat_history
+            # Update the chat history in the database
+            await firestore_chat.update_chat_history(chat_history)
+            return chat_history
 
-        # If the chat doesn't exist or the chat_id is not in the correct format, create a new chat
-        logger.info("Creating a new chat")
 
         # Generate a title for the chat
         chat_title = (
@@ -516,8 +502,9 @@ async def get_or_create_chat_history(
         # Save the chat history
         await firestore_chat.create_chat_history(chat_history)
         return chat_history
+
     except Exception as e:
-        logger.error(f"Error in get_or_create_chat_history: {e}", exc_info=True)
+        logger.error(f"[ChatAPI] Error in get_or_create_chat_history: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -882,25 +869,24 @@ async def unified_chat_message_stream(
     Unified endpoint for creating a new chat or adding a message to an existing chat.
     Returns a streaming response with the assistant's message.
     The chat_id is included in the X-Chat-ID response header.
-
-    Parameters:
-    - **chat_request**: The chat message request containing:
-      - **content** (required): The message content
-      - **client_id** (required): Unique identifier for the client
-      - **message_id** (optional): Unique identifier for the message (generated if not provided)
-      - **chat_id** (optional): Chat ID to add message to (creates new chat if not provided)
-      - **role** (optional): Message role (defaults to "user")
-      - **rag_provider** (optional): RAG provider to use (uses server default if not provided)
-      - **temperature** (optional): Temperature for LLM generation (defaults to 0.1)
-      - **use_multi_step** (optional): Whether to use multi-step retrieval (defaults to True)
-    - **rag_provider**: Optional override for the RAG provider specified in the request
-
-    Returns:
-    - Streaming response with the assistant's message
-    - X-Chat-ID header containing the chat ID
     """
-    # Get the chat_id from the request or generate a new one
-    chat_id = chat_request.chat_id or f"chat-{uuid.uuid4()}"
+    logger.info(f"[ChatAPI] Received message request: chat_id={chat_request.chat_id}, client_id={chat_request.client_id}")
+    
+    # First try to get existing chat if chat_id is provided
+    chat_id = chat_request.chat_id
+    if chat_id:
+        # Try to get existing chat
+        existing_chat = await firestore_chat.get_chat_history(chat_id)
+        if existing_chat:
+            logger.info(f"[ChatAPI] Found existing chat: {chat_id}")
+        else:
+            logger.warning(f"[ChatAPI] Chat ID provided but not found: {chat_id}")
+            # If chat_id was provided but not found, we'll create a new one
+            chat_id = None
+    
+    # Generate new chat ID only if we don't have a valid existing one
+    if not chat_id:
+        chat_id = f"chat-{uuid.uuid4()}"
 
     # Get or create the chat history
     chat_history = await get_or_create_chat_history(

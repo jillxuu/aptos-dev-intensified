@@ -1,9 +1,44 @@
 .chat-message {
-  margin-bottom: 1rem;
+  display: flex;
+  padding: 1rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.chat-message.user {
+  background-color: #f8f9fa;
+}
+
+.chat-message.assistant {
+  background-color: #ffffff;
+}
+
+.chat-message.thinking {
+  opacity: 0.8;
+}
+
+.thinking-indicator {
+  display: flex;
+  align-items: center;
+  color: #6c757d;
+  font-style: italic;
+}
+
+.thinking-indicator::after {
+  content: "...";
+  animation: thinking 1.5s infinite;
+  width: 1.5em;
+  text-align: left;
+}
+
+@keyframes thinking {
+  0% { content: "."; }
+  33% { content: ".."; }
+  66% { content: "..."; }
 }
 
 .message-content {
-  margin-left: 0.5rem;
+  flex: 1;
+  min-width: 0;
 }
 
 /* Prose styles */
@@ -75,44 +110,57 @@
 .message-details {
   margin-top: 0.5rem;
   font-size: 0.875rem;
-  color: var(--text-secondary-color, #666);
+  color: #6c757d;
 }
 
 .message-timestamp {
   margin-right: 1rem;
 }
 
+.message-id {
+  font-family: monospace;
+}
+
 /* Message actions */
 .message-actions {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 0.5rem;
-  margin-top: 0.5rem;
+  margin-left: 1rem;
 }
 
-.copy-button,
-.feedback-button {
-  display: inline-flex;
-  align-items: center;
+.copy-button {
   padding: 0.25rem 0.5rem;
-  font-size: 0.875rem;
+  border: 1px solid #dee2e6;
   border-radius: 0.25rem;
-  background: none;
-  border: 1px solid var(--border-color, #ddd);
+  background: transparent;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.2s;
 }
 
-.copy-button:hover,
-.feedback-button:hover {
-  background-color: var(--button-hover-bg, rgba(0, 0, 0, 0.05));
-}
-
-.feedback-button.active {
-  background-color: var(--button-active-bg, rgba(0, 0, 0, 0.1));
+.copy-button:hover {
+  background-color: #f8f9fa;
 }
 
 .feedback-buttons {
   display: flex;
   gap: 0.25rem;
+}
+
+.feedback-button {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #dee2e6;
+  border-radius: 0.25rem;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.feedback-button:hover {
+  background-color: #f8f9fa;
+}
+
+.feedback-button.active {
+  background-color: #e9ecef;
+  border-color: #ced4da;
 } 

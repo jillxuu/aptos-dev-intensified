@@ -7,19 +7,23 @@ This document outlines a comprehensive approach to chunking and embedding Move l
 To effectively manage Move code repositories, implement a hierarchical chunking strategy:
 
 1. **Repository-Level Chunking**
+
    - Store repo metadata (purpose, main modules, dependencies)
    - Track cross-repository references for ecosystem-wide relationships
 
 2. **Package-Level Chunking**
+
    - Preserve Move.toml configurations as metadata
    - Track dependencies between packages
 
 3. **Module-Level Chunking**
+
    - Each Move module as a primary chunk
    - Include imports, module structure, and resource definitions
    - Store structural metadata (resources, functions, constants)
 
 4. **Function-Level Chunking**
+
    - Extract individual functions with signatures
    - Include neighboring functions that are commonly called together
    - Preserve parameter and return type relationships
@@ -33,16 +37,19 @@ To effectively manage Move code repositories, implement a hierarchical chunking 
 Since Move is new to mainstream AI models, use LLM augmentation during preprocessing:
 
 1. **Code Summarization**
+
    - For each module/function, generate natural language summaries
    - Include purpose, inputs/outputs, and side effects
    - Example: "This module manages coin transfers between accounts with balance validation"
 
 2. **Code Translation**
+
    - Generate near-equivalent pseudocode in mainstream languages (Rust, TypeScript)
    - Create parallel embeddings of both Move code and translated versions
    - Example: "Move's resource-oriented ownership model translated to Rust-like borrowing"
 
 3. **Concept Extraction**
+
    - Identify blockchain-specific concepts in code (resources, abilities, signer)
    - Link to explanatory documentation on those concepts
    - Example: "Uses `key` ability for global storage access"
@@ -57,21 +64,25 @@ Since Move is new to mainstream AI models, use LLM augmentation during preproces
 Build explicit relationships between code entities:
 
 1. **Call Graphs**
+
    - Track function calls between components
    - Identify entry points and common flows
    - Store directionality (caller → callee)
 
 2. **Type Dependency Graphs**
+
    - Map relationships between types and their usage
    - Track resource abilities and constraints
    - Connect custom types to their implementations
 
 3. **Module Interaction Maps**
+
    - Identify cross-module dependencies
    - Track which modules interact with which resources
    - Map framework dependencies for custom modules
 
 4. **Error-Resolution Patterns**
+
    - Link common errors to resolution examples
    - Connect error codes to explanatory documentation
    - Map validation failures to required preconditions
@@ -86,11 +97,13 @@ Build explicit relationships between code entities:
 Tailor chunks to common developer query patterns:
 
 1. **"How to" Optimized Chunks**
+
    - Group code snippets that accomplish common tasks
    - Include initialization, execution, and cleanup steps
    - Example: "How to create a fungible asset in Move"
 
 2. **"Debug" Optimized Chunks**
+
    - Include error messages, validation checks, and failure points
    - Group related validation logic
    - Example: "Common causes of E11: insufficient balance errors"
@@ -117,9 +130,9 @@ Extend your metadata schema to support code-specific relationships:
     "signature": "public fun transfer<CoinType>(from: &signer, to: address, amount: u64)",
     "generic_types": ["CoinType"],
     "parameters": [
-      {"name": "from", "type": "&signer", "purpose": "Transaction signer"},
-      {"name": "to", "type": "address", "purpose": "Recipient address"},
-      {"name": "amount", "type": "u64", "purpose": "Amount to transfer"}
+      { "name": "from", "type": "&signer", "purpose": "Transaction signer" },
+      { "name": "to", "type": "address", "purpose": "Recipient address" },
+      { "name": "amount", "type": "u64", "purpose": "Amount to transfer" }
     ],
     "return_type": null,
     "abilities_required": ["key", "store"],
@@ -139,11 +152,13 @@ Extend your metadata schema to support code-specific relationships:
 Since Move is new, use LLMs to bridge the knowledge gap:
 
 1. **Query Translation**
+
    - Translate user questions about Move into known concepts
    - Map user intentions to Move-specific patterns
    - Example: "How do I store data?" → "How do I use resources in Move?"
 
 2. **Context Enhancement**
+
    - Analyze queries to detect implied Move concepts
    - Add missing context automatically
    - Example: "Using tables" → Add context about "Move storage model"
@@ -156,19 +171,22 @@ Since Move is new, use LLMs to bridge the knowledge gap:
 ## Implementation Approach
 
 1. **Static Analysis Pipeline**
+
    - Build a Move-aware parser for structural analysis
    - Extract imports, function calls, and type dependencies
    - Generate call graphs and dependency trees automatically
 
 2. **Multi-Modal Embeddings**
+
    - Create separate embeddings for:
-     - Raw Move code 
+     - Raw Move code
      - Natural language summaries
      - Pseudocode translations
      - Usage examples
    - Combine these for more robust retrieval
 
 3. **Hybrid Retrieval System**
+
    - For Move-specific queries, prioritize structural matches over semantic
    - Use graph walks for related concept discovery
    - Implement "concept bridging" between documentation and code
@@ -183,16 +201,19 @@ Since Move is new, use LLMs to bridge the knowledge gap:
 For your code examples repositories:
 
 1. **Pattern Libraries**
+
    - Categorize code examples by design pattern
    - Tag common implementation approaches
    - Provide "template" and "concrete implementation" versions
 
 2. **Progressive Complexity**
+
    - Tag examples by complexity level
    - Chain related examples from simple to advanced
    - Create learning paths through code examples
 
 3. **Cross-Referencing**
+
    - Link code examples to official documentation
    - Connect conceptual explanations to concrete implementations
    - Map tutorial steps to example repositories
@@ -205,11 +226,13 @@ For your code examples repositories:
 ## Evaluation and Optimization
 
 1. **Developer Intent Testing**
+
    - Test retrieval against real developer questions
    - Measure "time to functional understanding"
    - Optimize for actual development workflows
 
 2. **Progressive Enhancement**
+
    - Start with basic structural relationships
    - Add more complex relationships as you validate their utility
    - Prioritize relationship types that most improve retrieval quality
@@ -222,11 +245,13 @@ For your code examples repositories:
 ## Final Considerations
 
 1. **Onboarding New Developers**
+
    - Create special relationship types for "first-time concepts"
    - Build learning paths through the codebase
    - Connect conceptual documentation with practical examples
 
 2. **Balancing Depth vs. Performance**
+
    - Not all relationships need to be traversed for every query
    - Use query intent to prioritize relationship types
    - Implement adaptive traversal depth based on query complexity
@@ -239,11 +264,13 @@ For your code examples repositories:
 ## Integration with Documentation System
 
 1. **Unified Knowledge Graph**
+
    - Connect code repositories with documentation chunks
    - Create seamless traversal between concepts and implementations
    - Build "implementsConceptFrom" and "explainedByDoc" relationships
 
 2. **Multi-Repository Context**
+
    - Implement cross-repository awareness
    - Connect framework code with examples that use it
    - Build ecosystem-wide understanding of patterns
@@ -251,4 +278,4 @@ For your code examples repositories:
 3. **Versioned Knowledge**
    - Track concept evolution across code versions
    - Maintain compatibility information
-   - Support both "latest" and "specific version" queries 
+   - Support both "latest" and "specific version" queries

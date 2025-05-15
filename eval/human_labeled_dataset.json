@@ -1,434 +1,418 @@
 {
-    "version": "1.0",
-    "total_qa_pairs": 17,
-    "qa_pairs": [
+  "version": "1.0",
+  "total_qa_pairs": 17,
+  "qa_pairs": [
+    {
+      "question": "How do I create a dapp using Aptos and use the faucet API for funding accounts during development?",
+      "answer": "First, you need to set up your development environment. You need to have Node.js, npm, and Python 3.6+ installed as prerequisites. Then, use the `create-aptos-dapp` tool to generate a template project. This tool will save you time and help you avoid common setup errors, as it generates a predefined project structure, including a `contract` directory for your Move smart contract modules.\n\nAfter setting up your dapp, you will need to fund your test accounts with APT tokens for development and testing. The Aptos Faucet API can be used to get APT on the Aptos Devnet. The `create-aptos-dapp` tool has built-in commands that allow you to execute common tasks like this, but you can also send direct requests to the Faucet API's endpoint, which is \"https://faucet.devnet.aptoslabs.com\" for Devnet.\n\nIf you are using the TypeScript SDK, for example, you can fund an account with the following command:\n\n```typescript\n// replace the account string with your account address\nconst account = \"0xd0f523c9e73e6f3d68c16ae883a9febc616e484c4998a72d8899a1009e5a89d6\";\n// replace '1' with the number of APT tokens to be funded\nconst amount = 1 * 100_000_000; // convert APT to Octas, as the amount used is in Octas (1 APT = 100,000,000 Octas)\nawait client.fundWithFaucet(account, amount);\n```\n\nNote that these tokens are solely for development purposes and have no real-world value.",
+      "sources": [
         {
-            "question": "How do I create a dapp using Aptos and use the faucet API for funding accounts during development?",
-            "answer": "First, you need to set up your development environment. You need to have Node.js, npm, and Python 3.6+ installed as prerequisites. Then, use the `create-aptos-dapp` tool to generate a template project. This tool will save you time and help you avoid common setup errors, as it generates a predefined project structure, including a `contract` directory for your Move smart contract modules.\n\nAfter setting up your dapp, you will need to fund your test accounts with APT tokens for development and testing. The Aptos Faucet API can be used to get APT on the Aptos Devnet. The `create-aptos-dapp` tool has built-in commands that allow you to execute common tasks like this, but you can also send direct requests to the Faucet API's endpoint, which is \"https://faucet.devnet.aptoslabs.com\" for Devnet.\n\nIf you are using the TypeScript SDK, for example, you can fund an account with the following command:\n\n```typescript\n// replace the account string with your account address\nconst account = \"0xd0f523c9e73e6f3d68c16ae883a9febc616e484c4998a72d8899a1009e5a89d6\";\n// replace '1' with the number of APT tokens to be funded\nconst amount = 1 * 100_000_000; // convert APT to Octas, as the amount used is in Octas (1 APT = 100,000,000 Octas)\nawait client.fundWithFaucet(account, amount);\n```\n\nNote that these tokens are solely for development purposes and have no real-world value.",
-            "sources": [
-              {
-                "url": "https://aptos.dev/en/build/create-aptos-dapp",
-                "section_title": "Using `create-aptos-dapp`",
-                "relevance": "This section provides steps on how to set up a dapp using the `create-aptos-dapp` tool."
-              },
-              {
-                "url": "https://aptos.dev/en/build/apis/faucet-api",
-                "section_title": "Using the faucet",
-                "relevance": "This section explains how to use the Faucet API to fund test accounts with APT tokens."
-              }
-            ],
-            "category": "Development Tools",
-            "subcategory": null,
-            "related_concepts": [
-              "Dapp Development",
-              "Faucet API",
-              "Move Smart Contract",
-              "Account",
-              "APT Tokens\n\n---"
-            ],
-            "difficulty_level": "Intermediate",
-            "question_type": "Implementation"
-          },
-          {
-            "question": "How do I use the Aptos TypeScript SDK to check if a connected account has a 'TodoList' resource, and display different elements in my React application based on the presence of this resource?",
-            "answer": "To use the Aptos TypeScript SDK to check if a connected account has a 'TodoList' resource, you need to follow these steps:\n1. Import the 'Aptos' class from the TypeScript SDK and initialize an instance of it.\n2. Import and extract the account object from the wallet adapter React provider.\n3. Use the 'queryResource' method on the 'Aptos' instance, passing in the account address and the resource type you want to check for ('TodoList' in this case).\n4. Based on whether the resource exists or not, you can conditionally render different elements in your React application. If the account has a 'TodoList' resource, display the list, if not, display a button offering the option to create a new list.",
-            "sources": [
-              {
-                "url": "https://aptos.dev/en/build/guides/build-e2e-dapp/4-fetch-data-from-chain",
-                "section_title": "4. Fetch Data from Chain",
-                "relevance": "This section explains how to use the Aptos TypeScript SDK to fetch data from the chain, including how to check for the presence of a specific resource in an account."
-              },
-              {
-                "url": "https://aptos.dev/en/build/guides/build-e2e-dapp/3-add-wallet-support",
-                "section_title": "3. Add Wallet Support",
-                "relevance": "This section provides information on how to add wallet support to your application, including how to extract the account object from the wallet adapter."
-              }
-            ],
-            "category": "SDK Development",
-            "subcategory": null,
-            "related_concepts": [
-              "TypeScript SDK",
-              "Wallet Integration",
-              "Resource Checking",
-              "React Application Development"
-            ],
-            "difficulty_level": "Intermediate",
-            "question_type": "Implementation"
-          },
-          {
-            "question": "How can I integrate Aptos wallet with my dApp?",
-            "answer": "To integrate Aptos wallets with your dApp, you should use the React `Provider` and `Context` provided by Aptos. Follow these steps:\n\n1. Install `@aptos-labs/wallet-adapter-react`.\n2. Optionally install the plugins for any \u201cLegacy Standard Compatible\u201d Wallets you want to support. Note that modern AIP-62 wallets do not require installing a package - they work by default!\n3. Initialize the `AptosWalletAdapterProvider` and set `autoConnect` to `true`, also include `plugins` for any wallets that are using the legacy standard.\n\nThis will provide a standard interface for using all Aptos wallets, and allow new wallets to be easily supported just by updating your React Wallet Adapter dependency version.",
-            "sources": [
-              {
-                "url": "https://aptos.dev/en/build/sdks/wallet-adapter/dapp",
-                "section_title": "Wallet Adapter for Dapp Builders",
-                "relevance": "This part explains how to integrate Aptos wallets with a dApp."
-              }
-            ],
-            "category": "Wallet Integration",
-            "subcategory": null,
-            "related_concepts": [
-              "API Usage",
-              "Wallet Integration",
-              "DApp development\n\n---"
-            ],
-            "difficulty_level": "Intermediate",
-            "question_type": "Implementation"
-          },
-          {
-            "question": "How can I set up a validator node, stake the necessary coins, and then interact with my node using the Aptos Fullnode API?",
-            "answer": "Setting up a validator node involves deploying and operating Aptos nodes in your desired environment. You would also need to stake the minimum amount of utility coins. Different types of nodes, their roles, and instructions for their deployment can be found in the \"Learn about Nodes\" section of the documentation.\n\nOnce you have set up your node, you can interact with it using the Aptos Fullnode API. This API, embedded into Fullnodes, provides a simple way of reading state and submitting transactions to the Aptos Blockchain. Information about different APIs and their use-cases are provided in the \"Aptos APIs\" section of the documentation.",
-            "sources": [
-              {
-                "url": "https://aptos.dev/en/network/nodes",
-                "section_title": "Learn about Nodes",
-                "relevance": "This section provides information on setting up different types of Aptos nodes including validator nodes."
-              },
-              {
-                "url": "https://aptos.dev/en/build/apis",
-                "section_title": "Aptos APIs",
-                "relevance": "This section provides information on different APIs, including the Aptos Fullnode API which can be used to interact with the validator node."
-              }
-            ],
-            "category": "Deployment and Operations, API Usage",
-            "subcategory": null,
-            "related_concepts": [
-              "Validator Nodes",
-              "Staking",
-              "Aptos Fullnode API\n\n---"
-            ],
-            "difficulty_level": "Advanced",
-            "question_type": "implementation"
-          },
-            {
-              "question": "How can I use the Indexer API to query historical data and aggregate data about transactions and tokens on the Aptos blockchain?",
-              "answer": "The Indexer API allows you to query for aggregate data (like the number of existing NFTs) and historical data (such as the transactions a specific account has submitted). You can also get data that's difficult to get from the simpler Aptos Node API such as the account that owns a specific token. \n\nTo use the Indexer API, you need to construct a query. For example, to look up the fungible asset balances of a specific account, you can use the following query:\n\n```\nquery GetFungibleAssetBalances($address: String, $offset: Int) {\n  current_fungible_asset_balances(\n    where: {owner_address: {_eq: $address}},\n    offset: $offset,\n    limit: 100,\n    order_by: {amount: desc}\n  ) {\n    asset_type\n    amount\n    __typename\n  }\n}\n```\n\nFirst, specify the address and offset in the variables section. Then, the query is used to get the balances of all fungible assets owned by the address.",
-              "sources": [
-                {
-                  "url": "https://aptos.dev/en/build/er",
-                  "section_title": "Indexer",
-                  "relevance": "This section introduces the Indexer and the types of data you can query for using the Indexer API."
-                },
-                {
-                  "url": "https://aptos.dev/en/build/er",
-                  "section_title": "Using the Indexer API",
-                  "relevance": "This section provides a practical example of how to use the Indexer API to query for data."
-                }
-              ],
-              "category": "API Usage",
-              "subcategory": null,
-              "related_concepts": [
-                "Indexer API",
-                "Querying for Data",
-                "Aggregate Data",
-                "Historical Data",
-                "Node API\n\n---"
-              ],
-              "difficulty_level": "intermediate",
-              "question_type": "implementation"
-            },
-            {
-              "question": "How do I mint my own coin on the Aptos blockchain using the Python SDK and what steps are necessary to integrate this process into my application?",
-              "answer": "To mint your own coin on the Aptos blockchain using the Python SDK, you first need to follow the \"Your First Coin\" tutorial. This involves installing a preferred SDK (Python SDK in your case), installing the Aptos CLI, and running the \"your_coin\" example from the Python SDK examples directory. The example will pause and ask you to build the package using the CLI and then complete the example.\n\nOnce you've created your coin, to integrate this into your application, you need to follow multiple steps outlined in the \"Application Integration Guide\". This includes preparing a testing environment, creating an account on the blockchain, exchanging account identifiers with another entity on the blockchain, creating a transaction, obtaining a gas estimate and validating the transaction for correctness, submitting the transaction to the blockchain, and querying historical transactions and interactions for a given account.",
-              "sources": [
-                {
-                  "url": "https://aptos.dev/en/build/guides/first-coin",
-                  "section_title": "Your First Coin",
-                  "relevance": "This section provides the initial steps for creating your own coin using the Python SDK."
-                },
-                {
-                  "url": "https://aptos.dev/en/build/guides/system-integrators-guide",
-                  "section_title": "Application Integration Guide",
-                  "relevance": "This section provides the steps for integrating the process of creating a coin into an application."
-                }
-              ],
-              "category": "Smart Contract Development, Development Tools, Deployment and Operations",
-              "subcategory": null,
-              "related_concepts": [
-                "Blockchain Integration",
-                "SDK Usage",
-                "CLI Tools",
-                "Transaction Management",
-                "Account Management\n\n---"
-              ],
-              "difficulty_level": "Intermediate",
-              "question_type": "Implementation"
-            },
-            {
-              "question": "What steps do I need to take to integrate Aptos blockchain into my platform and create transactions for a new coin minted using TypeScript SDK?",
-              "answer": "To integrate Aptos blockchain into your platform, you must follow the steps outlined in the \"Application Integration Guide\". \n\nThis includes preparing an environment for testing, creating an account on the blockchain, exchanging account identifiers with another entity on the blockchain to perform swaps, creating a transaction, obtaining a gas estimate and validating the transaction for correctness, submitting the transaction to the blockchain, and waiting for the transaction's outcome.\n\nTo create a new coin, you need to follow the steps in the \"Your First Coin\" tutorial. This involves installing the TypeScript SDK, installing the Aptos CLI, and running the \"your_coin\" example from the TypeScript SDK examples directory.",
-              "sources": [
-                {
-                  "url": "https://aptos.dev/en/build/guides/system-integrators-guide",
-                  "section_title": "Application Integration Guide",
-                  "relevance": "This guide provides the steps needed to integrate Aptos into your platform."
-                },
-                {
-                  "url": "https://aptos.dev/en/build/guides/first-coin",
-                  "section_title": "Your First Coin",
-                  "relevance": "This tutorial provides the steps to create a new coin on Aptos using the TypeScript SDK."
-                }
-              ],
-              "category": "Blockchain Concepts, Smart Contract Development, Development Tools, Deployment and Operations",
-              "subcategory": null,
-              "related_concepts": [
-                "SDK Development",
-                "Transaction Management",
-                "CLI Tools",
-                "Account Management",
-                "Blockchain Integration\n\n---"
-              ],
-              "difficulty_level": "Advanced",
-              "question_type": "Implementation"
-            },
-            {
-              "question": "How can I create a lottery system on Aptos using the randomness API and storing the lottery entries in a SmartVector?",
-              "answer": "To create a lottery system on Aptos, you can use the Aptos randomness API to select a winner and SmartVector to store the entries. First, you would need to create a SmartVector to store the entries of the lottery. This can be done using the `new<T: store>(): SmartVector<T>` function. Each entry could be a struct that contains information about the participant.\n\nOnce the entries are gathered, you could use the `let winner_idx = aptos_framework::randomness::u64_range(0, n);` function in Aptos randomness API to select a winner. This function returns a uniformly distributed random number between 0 and n, where n is the number of entries in the SmartVector.\n\nIn the SmartVector, you can use the `borrow<T>(v: &SmartVector<T>, i: u64): &T` function to reference the winning entry using the index provided by the randomness API function.",
-              "sources": [
-                {
-                  "url": "https://aptos.dev/en/build/smart-contracts/randomness",
-                  "section_title": "Aptos Roll: A Randomness API",
-                  "relevance": "This section provides the method to generate a random number, which is essential for selecting a winner in a lottery system."
-                },
-                {
-                  "url": "https://aptos.dev/en/build/smart-contracts/smart-vector",
-                  "section_title": "Smart Vector",
-                  "relevance": "This section gives information about the SmartVector data structure, which can be used to efficiently store the entries of the lottery."
-                }
-              ],
-              "category": "Smart Contract Development",
-              "subcategory": null,
-              "related_concepts": [
-                "Randomness API",
-                "SmartVector",
-                "Smart Contract Development",
-                "Data Structures\n\n---"
-              ],
-              "difficulty_level": "Intermediate",
-              "question_type": "Implementation"
-            },
-            {
-              "question": "How can I ensure that my Fungible Assets implemented in Move are secure, and only accessible to the rightful owners?",
-              "answer": "To ensure the security of your Fungible Assets implemented in Move, you should use Move's inherent security mechanisms and follow best practices for secure coding. \n\nWhen defining Fungible Assets using the Aptos Fungible Asset Standard, you'll use two Move Objects: `Object<Metadata>` and `Object<FungibleStore>`. The `Object<Metadata>` contains details about the fungible asset, while the `Object<FungibleStore>` stores a count of fungible asset units owned by an account. \n\nOne common security concern is ensuring that only the rightful owners can access these objects. This can be achieved by implementing ownership checks. In the Move language, every `Object<T>` can be accessed by anyone, which means any `Object<T>` can be passed to any function, even if the caller doesn't own it. You should verify that the signer is the rightful owner of the object.\n\nFor example, you can include a function in your contract that takes in an `&signer` and an `Object<T>` as parameters, and checks if the signer is the owner of the object. If not, the function should halt execution and return an error.",
-              "sources": [
-                {
-                  "url": "https://aptos.dev/en/build/smart-contracts/fungible-asset",
-                  "section_title": "Aptos Fungible Asset (FA) Standard",
-                  "relevance": "This section provides information on how fungible assets are defined and managed in the Move ecosystem, which is crucial to understanding how to properly secure them."
-                },
-                {
-                  "url": "https://aptos.dev/en/build/smart-contracts/move-security-guidelines",
-                  "section_title": "Move Security Guidelines > Object Ownership Check",
-                  "relevance": "This section provides advice on how to implement ownership checks in Move to ensure that only authorized users can access certain objects."
-                }
-              ],
-              "category": "Smart Contract Development, Security Best Practices",
-              "subcategory": null,
-              "related_concepts": [
-                "Move programming language",
-                "Assets",
-                "Security",
-                "Blockchain",
-                "Smart Contract\n\n---"
-              ],
-              "difficulty_level": "Intermediate",
-              "question_type": "Implementation"
-            },
-            {
-              "question": "How can I create a Fungible Asset on the Aptos blockchain that can be used to represent real-world assets?",
-              "answer": "To create a Fungible Asset on the Aptos blockchain that can represent real-world assets, you would need to utilize the Aptos Fungible Asset (FA) Standard. This standard provides a type-safe way to define fungible assets in the Move ecosystem, and it's especially suitable for real-world assets as it allows for customization.\n\nWhen creating a Fungible Asset, you'll use two Move Objects: `Object<Metadata>` and `Object<FungibleStore>`. The `Object<Metadata>` is used to store details about the asset, such as its name, symbol, and decimals. This is where you can customize the asset to represent a real-world asset by setting the Metadata appropriately.\n\nIn addition, the `Object<FungibleStore>` is used to track the quantity of the asset owned by an account. This allows for the representation of ownership of the real-world asset on the blockchain.\n\nFinally, ensure to follow security guidelines to protect your real-world asset represented as Fungible Asset.",
-              "sources": [
-                {
-                  "url": "https://aptos.dev/en/build/smart-contracts/fungible-asset",
-                  "section_title": "Aptos Fungible Asset (FA) Standard",
-                  "relevance": "This section provides information on how to create and customize Fungible Assets on Aptos, which is necessary for representing real-world assets."
-                },
-                {
-                  "url": "https://aptos.dev/en/build/smart-contracts/move-security-guidelines",
-                  "section_title": "Move Security Guidelines",
-                  "relevance": "This section explains how to ensure the security of assets defined in the Move language, which is crucial when representing real-world assets that have tangible value."
-                }
-              ],
-              "category": "Move Programming Language Basics, Smart Contract Development",
-              "subcategory": null,
-              "related_concepts": [
-                "Blockchain",
-                "Real-world assets",
-                "Fungible assets",
-                "Security",
-                "Smart Contract"
-              ],
-              "difficulty_level": "Beginner",
-              "question_type": "Implementation"
-            },
-            {
-              "question": "How can I efficiently filter data when querying the Indexer API?",
-              "answer": "Efficiency in filtering data when querying the Indexer API can be achieved through the smart use of indexes for each table. Some indexes are composite B-tree indexes, meaning they consist of multiple columns. B-tree indexes are ordered and perform optimally when queries utilize a left-most prefix of the indexed columns. Therefore, consider structuring your queries to utilize a left-most prefix of the indexed columns for efficient filtering.\n\nSOURCE:\n- URL: https://aptos.dev/en/build/er/er-api/er-referencex\n  SECTION: Filtering (with `where` clauses)\n  RELEVANCE: This section gives specific advice on how to filter data efficiently using the Indexer API.\n\nCATEGORY: API Usage\nDIFFICULTY: Intermediate\nQUESTION TYPE: Single Concept\nRELATED CONCEPTS: Indexer API, Data Filtering, Query Optimization, B-tree Index, GraphQL",
-              "sources": [
-                {
-                  "url": "https://aptos.dev/en/build/er/er-api/er-reference",
-                  "section_title": "Filtering (with `where` clauses)",
-                  "relevance": "This section gives specific advice on how to filter data efficiently using the Indexer API."
-                }
-              ],
-              "category": "API Usage",
-              "subcategory": null,
-              "related_concepts": [
-                "Indexer API",
-                "Data Filtering",
-                "Query Optimization",
-                "B-tree Index",
-                "GraphQL"
-              ],
-              "difficulty_level": "Intermediate",
-              "question_type": "Single Concept"
-            },
-            {
-              "question": "How can I read the events emitted during the execution of my Move smart contract on the Aptos Testnet?",
-              "answer": "To read the events emitted by your Move smart contract while testing on the Aptos Testnet, you would typically take the following steps:\n\n1. Write your Move smart contract. While doing so, define your module events using the `#[event]` attribute for any struct that has `drop` and `store` abilities. \n\n2. Deploy your smart contract to the Aptos Testnet. You can use the Testnet Faucet to acquire test tokens if required.\n\n3. Execute your smart contract and trigger the events you need to read. \n\n4. Query the module events using the GraphQL API. You can find example module events and their indices on the Aptos explorer.\n\nRemember that events are stored in a separate merkle tree (event accumulator) for each transaction. However, they are ephemeral and independent of the state tree, so the MoveVM does not have read access to events when executing a transaction in production.",
-              "sources": [
-                {
-                  "url": "https://aptos.dev/en/network/blockchain/events",
-                  "section_title": "Events",
-                  "relevance": "This section provides information on how to define events in the Move programming language and how to query these events using the GraphQL API."
-                },
-                {
-                  "url": "https://aptos.dev/en/network/nodes/networks",
-                  "section_title": "Aptos Networks",
-                  "relevance": "This section provides information on the Aptos Testnet, which is the network on which the developer would be testing their smart contract."
-                }
-              ],
-              "category": "Smart Contract Development",
-              "subcategory": null,
-              "related_concepts": [
-                "Move Programming Language",
-                "Smart Contracts",
-                "Events",
-                "Aptos Testnet",
-                "GraphQL API"
-              ],
-              "difficulty_level": "Intermediate",
-              "question_type": "Implementation"
-            },
-            {
-              "question": "How can I setup and debug a local Aptos network using CLI and Docker for testing my smart contracts?",
-              "answer": "Setting up a local Aptos network can be beneficial for testing your smart contracts without any rate-limits and internet access. Here is a step-by-step guide:\n\n1. Ensure you have the Aptos CLI installed. You can verify this by running `aptos --version`.\n2. You must also have Docker Desktop installed as it's required for running the Indexer API. Verify your Docker installation by running `docker --version` and start Docker.\n3. Now, run the appropriate command in a new terminal to start your private network. Wait until you see the message `Setup is complete, you can now use the local testnet!` which indicates the local network is running.\n\nTo debug your network, you will need to monitor certain node metrics such as consensus metrics (e.g., `aptos_consensus_proposals_count`, `aptos_consensus_last_committed_round`, `aptos_consensus_timeout_count`) which indicate the node's participation in the network and can help diagnose issues like network difficulties.",
-              "sources": [
-                {
-                  "url": "https://aptos.dev/en/network/nodes/localnet/local-development-network",
-                  "section_title": "Running a Local Network via Aptos CLI",
-                  "relevance": "This section provides the steps to set up a local network for testing."
-                },
-                {
-                  "url": "https://aptos.dev/en/network/nodes/measure/important-metrics",
-                  "section_title": "Important Node Metrics",
-                  "relevance": "This section outlines the key metrics to monitor for debugging the network."
-                }
-              ],
-              "category": "Deployment and Operations",
-              "subcategory": null,
-              "related_concepts": [
-                "Docker",
-                "Aptos CLI",
-                "Node Metrics\n\n---"
-              ],
-              "difficulty_level": "Beginner",
-              "question_type": "Implementation"
-            },
-            {
-              "question": "I'm planning to run an Aptos validator and VFN on separate machines in the mainnet. What are the hardware requirements I need to consider, and why is resource isolation important?",
-              "answer": "Running an Aptos validator and VFN requires that both nodes run on two separate and independent machines. These machines should be well-provisioned to maintain ~30,000 transactions per second (TPS). The hardware specifications necessary to achieve this performance can be found in the Node Requirements section of the Aptos documentation. \n\nResource isolation between the validator and the VFN is crucial for security and to ensure that the nodes do not encounter performance degradation, instability, or failures when under load. This means that the validator and VFN require sufficient hardware separately.",
-              "sources": [
-                {
-                  "url": "https://aptos.dev/en/network/nodes/validator-node/node-requirements",
-                  "section_title": "Node Requirements",
-                  "relevance": "This section provides information on the hardware requirements and the importance of resource isolation when running an Aptos validator and VFN."
-                }
-              ],
-              "category": "Deployment and Operations",
-              "subcategory": null,
-              "related_concepts": [
-                "Node Requirements",
-                "Resource Isolation",
-                "Validator Deployment",
-                "VFN Deployment",
-                "Hardware Specifications"
-              ],
-              "difficulty_level": "Advanced",
-              "question_type": "Implementation"
-            },
-            {
-              "question": "I'm a beginner with Move and Aptos. How can I start a Move package from a template to begin developing on Aptos?",
-              "answer": "You can utilize the `aptos move init` command to initialize a package using a template. For instance, to start a package using the `hello-blockchain` template, you would run `aptos move init --name hello_blockchain --template hello-blockchain`. This command will create a `hello_blockchain.move` file under `sources` to help get you started. \n\nIf you want to explore more templates, use `aptos move init --help` to see a list of all available templates.",
-              "sources": [
-                {
-                  "url": "https://aptos.dev/en/build/cli/start-from-template",
-                  "section_title": "Start a Move package from a template",
-                  "relevance": "This section provides a step-by-step guide on how to start a Move package from a template in Aptos."
-                }
-              ],
-              "category": "Move Programming Language Basics",
-              "subcategory": null,
-              "related_concepts": [
-                "Move Programming Language",
-                "Aptos Blockchain",
-                "Package Initialization",
-                "Smart Contract Development\n\n---"
-              ],
-              "difficulty_level": "Beginner",
-              "question_type": "Single_concept"
-            },
-            {
-              "question": "I want to create and manage a fungible asset with multisig account in Aptos. Could you guide me through the process?",
-              "answer": "To create a fungible asset controlled by an Aptos framework multisig account, you first need a well-designed smart contract based on the fungible asset standard. An example code for this is available in the `aptos-core` repo. You need to clone this repo and navigate to the `managed_fungible_asset` directory. Then, publish this package onto your `default` account using CLI. Do the same for `multisig_managed_coin` package which calls functions defined in `managed_fungible_asset`. Make sure both modules are published on the same address. Also, ensure your account is funded before publishing modules. After publishing, you can start the `multisig_managed_coin` example and run it.",
-              "sources": [
-                {
-                  "url": "https://aptos.dev/en/build/guides/multisig-managed-fungible-asset",
-                  "section_title": "Manage Fungible Assets with Multisig",
-                  "relevance": "This section provides a step-by-step guide on how to create and manage a fungible asset with multisig account in Aptos."
-                }
-              ],
-              "category": "Smart Contract Development",
-              "subcategory": null,
-              "related_concepts": [
-                "Multisig Account",
-                "Fungible Assets",
-                "Smart Contracts",
-                "CLI Tools\n\n---"
-              ],
-              "difficulty_level": "Intermediate",
-              "question_type": "Implementation"
-            },
-            {
-              "question": "How do I handle third-party dependencies in my Move smart contract, and what considerations should I keep in mind when sourcing these dependencies?",
-              "answer": "Third-party dependencies are external modules that a controlled module interacts with. They can be important if your smart contract needs to interact with other on-chain entities. For example, a multi-DEX router utilizes third-party dependencies to consolidate multiple DEX interactions into a single transaction.\n\nYou can specify third-party dependencies in the `Move.toml` file of your Move package. By default, `Move.toml` includes `AptosFramework` as a git repository dependency. When you run Aptos CLI commands, updates to the dependency are automatically retrieved and compiled against.\n\nWhen sourcing dependencies, consider their reliability and available information. Source code that is verified against the on-chain deployed module, like the Git Repository and Local Source Code, should always be preferred. You can include third-party source code in the `sources` directory, treating it the same as custom code. If neither of those are available, there are other options to depend on usable code, like decompiled code, bytecode, and ABI-crafted code.",
-              "sources": [
-                {
-                  "url": "https://aptos.dev/en/build/smart-contracts/create-package",
-                  "section_title": "Create Package",
-                  "relevance": "This section explains how to initialize a Move package and specify dependencies in `Move.toml`."
-                },
-                {
-                  "url": "https://aptos.dev/en/build/smart-contracts/third-party-dependencies",
-                  "section_title": "Third Party Dependencies",
-                  "relevance": "This section provides guidance on handling and sourcing third-party dependencies."
-                }
-              ],
-              "category": "Move Programming Language Basics, Smart Contract Development",
-              "subcategory": null,
-              "related_concepts": [
-                "Move Packages",
-                "Aptos CLI",
-                "Third-party Dependencies",
-                "Sourcing Dependencies",
-                "Smart Contracts"
-              ],
-              "difficulty_level": "Intermediate",
-              "question_type": "Implementation"
-            }
-    ]
+          "url": "https://aptos.dev/en/build/create-aptos-dapp",
+          "section_title": "Using `create-aptos-dapp`",
+          "relevance": "This section provides steps on how to set up a dapp using the `create-aptos-dapp` tool."
+        },
+        {
+          "url": "https://aptos.dev/en/build/apis/faucet-api",
+          "section_title": "Using the faucet",
+          "relevance": "This section explains how to use the Faucet API to fund test accounts with APT tokens."
+        }
+      ],
+      "category": "Development Tools",
+      "subcategory": null,
+      "related_concepts": [
+        "Dapp Development",
+        "Faucet API",
+        "Move Smart Contract",
+        "Account",
+        "APT Tokens\n\n---"
+      ],
+      "difficulty_level": "Intermediate",
+      "question_type": "Implementation"
+    },
+    {
+      "question": "How do I use the Aptos TypeScript SDK to check if a connected account has a 'TodoList' resource, and display different elements in my React application based on the presence of this resource?",
+      "answer": "To use the Aptos TypeScript SDK to check if a connected account has a 'TodoList' resource, you need to follow these steps:\n1. Import the 'Aptos' class from the TypeScript SDK and initialize an instance of it.\n2. Import and extract the account object from the wallet adapter React provider.\n3. Use the 'queryResource' method on the 'Aptos' instance, passing in the account address and the resource type you want to check for ('TodoList' in this case).\n4. Based on whether the resource exists or not, you can conditionally render different elements in your React application. If the account has a 'TodoList' resource, display the list, if not, display a button offering the option to create a new list.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/build/guides/build-e2e-dapp/4-fetch-data-from-chain",
+          "section_title": "4. Fetch Data from Chain",
+          "relevance": "This section explains how to use the Aptos TypeScript SDK to fetch data from the chain, including how to check for the presence of a specific resource in an account."
+        },
+        {
+          "url": "https://aptos.dev/en/build/guides/build-e2e-dapp/3-add-wallet-support",
+          "section_title": "3. Add Wallet Support",
+          "relevance": "This section provides information on how to add wallet support to your application, including how to extract the account object from the wallet adapter."
+        }
+      ],
+      "category": "SDK Development",
+      "subcategory": null,
+      "related_concepts": [
+        "TypeScript SDK",
+        "Wallet Integration",
+        "Resource Checking",
+        "React Application Development"
+      ],
+      "difficulty_level": "Intermediate",
+      "question_type": "Implementation"
+    },
+    {
+      "question": "How can I integrate Aptos wallet with my dApp?",
+      "answer": "To integrate Aptos wallets with your dApp, you should use the React `Provider` and `Context` provided by Aptos. Follow these steps:\n\n1. Install `@aptos-labs/wallet-adapter-react`.\n2. Optionally install the plugins for any \u201cLegacy Standard Compatible\u201d Wallets you want to support. Note that modern AIP-62 wallets do not require installing a package - they work by default!\n3. Initialize the `AptosWalletAdapterProvider` and set `autoConnect` to `true`, also include `plugins` for any wallets that are using the legacy standard.\n\nThis will provide a standard interface for using all Aptos wallets, and allow new wallets to be easily supported just by updating your React Wallet Adapter dependency version.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/build/sdks/wallet-adapter/dapp",
+          "section_title": "Wallet Adapter for Dapp Builders",
+          "relevance": "This part explains how to integrate Aptos wallets with a dApp."
+        }
+      ],
+      "category": "Wallet Integration",
+      "subcategory": null,
+      "related_concepts": ["API Usage", "Wallet Integration", "DApp development\n\n---"],
+      "difficulty_level": "Intermediate",
+      "question_type": "Implementation"
+    },
+    {
+      "question": "How can I set up a validator node, stake the necessary coins, and then interact with my node using the Aptos Fullnode API?",
+      "answer": "Setting up a validator node involves deploying and operating Aptos nodes in your desired environment. You would also need to stake the minimum amount of utility coins. Different types of nodes, their roles, and instructions for their deployment can be found in the \"Learn about Nodes\" section of the documentation.\n\nOnce you have set up your node, you can interact with it using the Aptos Fullnode API. This API, embedded into Fullnodes, provides a simple way of reading state and submitting transactions to the Aptos Blockchain. Information about different APIs and their use-cases are provided in the \"Aptos APIs\" section of the documentation.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/network/nodes",
+          "section_title": "Learn about Nodes",
+          "relevance": "This section provides information on setting up different types of Aptos nodes including validator nodes."
+        },
+        {
+          "url": "https://aptos.dev/en/build/apis",
+          "section_title": "Aptos APIs",
+          "relevance": "This section provides information on different APIs, including the Aptos Fullnode API which can be used to interact with the validator node."
+        }
+      ],
+      "category": "Deployment and Operations, API Usage",
+      "subcategory": null,
+      "related_concepts": ["Validator Nodes", "Staking", "Aptos Fullnode API\n\n---"],
+      "difficulty_level": "Advanced",
+      "question_type": "implementation"
+    },
+    {
+      "question": "How can I use the Indexer API to query historical data and aggregate data about transactions and tokens on the Aptos blockchain?",
+      "answer": "The Indexer API allows you to query for aggregate data (like the number of existing NFTs) and historical data (such as the transactions a specific account has submitted). You can also get data that's difficult to get from the simpler Aptos Node API such as the account that owns a specific token. \n\nTo use the Indexer API, you need to construct a query. For example, to look up the fungible asset balances of a specific account, you can use the following query:\n\n```\nquery GetFungibleAssetBalances($address: String, $offset: Int) {\n  current_fungible_asset_balances(\n    where: {owner_address: {_eq: $address}},\n    offset: $offset,\n    limit: 100,\n    order_by: {amount: desc}\n  ) {\n    asset_type\n    amount\n    __typename\n  }\n}\n```\n\nFirst, specify the address and offset in the variables section. Then, the query is used to get the balances of all fungible assets owned by the address.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/build/er",
+          "section_title": "Indexer",
+          "relevance": "This section introduces the Indexer and the types of data you can query for using the Indexer API."
+        },
+        {
+          "url": "https://aptos.dev/en/build/er",
+          "section_title": "Using the Indexer API",
+          "relevance": "This section provides a practical example of how to use the Indexer API to query for data."
+        }
+      ],
+      "category": "API Usage",
+      "subcategory": null,
+      "related_concepts": [
+        "Indexer API",
+        "Querying for Data",
+        "Aggregate Data",
+        "Historical Data",
+        "Node API\n\n---"
+      ],
+      "difficulty_level": "intermediate",
+      "question_type": "implementation"
+    },
+    {
+      "question": "How do I mint my own coin on the Aptos blockchain using the Python SDK and what steps are necessary to integrate this process into my application?",
+      "answer": "To mint your own coin on the Aptos blockchain using the Python SDK, you first need to follow the \"Your First Coin\" tutorial. This involves installing a preferred SDK (Python SDK in your case), installing the Aptos CLI, and running the \"your_coin\" example from the Python SDK examples directory. The example will pause and ask you to build the package using the CLI and then complete the example.\n\nOnce you've created your coin, to integrate this into your application, you need to follow multiple steps outlined in the \"Application Integration Guide\". This includes preparing a testing environment, creating an account on the blockchain, exchanging account identifiers with another entity on the blockchain, creating a transaction, obtaining a gas estimate and validating the transaction for correctness, submitting the transaction to the blockchain, and querying historical transactions and interactions for a given account.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/build/guides/first-coin",
+          "section_title": "Your First Coin",
+          "relevance": "This section provides the initial steps for creating your own coin using the Python SDK."
+        },
+        {
+          "url": "https://aptos.dev/en/build/guides/system-integrators-guide",
+          "section_title": "Application Integration Guide",
+          "relevance": "This section provides the steps for integrating the process of creating a coin into an application."
+        }
+      ],
+      "category": "Smart Contract Development, Development Tools, Deployment and Operations",
+      "subcategory": null,
+      "related_concepts": [
+        "Blockchain Integration",
+        "SDK Usage",
+        "CLI Tools",
+        "Transaction Management",
+        "Account Management\n\n---"
+      ],
+      "difficulty_level": "Intermediate",
+      "question_type": "Implementation"
+    },
+    {
+      "question": "What steps do I need to take to integrate Aptos blockchain into my platform and create transactions for a new coin minted using TypeScript SDK?",
+      "answer": "To integrate Aptos blockchain into your platform, you must follow the steps outlined in the \"Application Integration Guide\". \n\nThis includes preparing an environment for testing, creating an account on the blockchain, exchanging account identifiers with another entity on the blockchain to perform swaps, creating a transaction, obtaining a gas estimate and validating the transaction for correctness, submitting the transaction to the blockchain, and waiting for the transaction's outcome.\n\nTo create a new coin, you need to follow the steps in the \"Your First Coin\" tutorial. This involves installing the TypeScript SDK, installing the Aptos CLI, and running the \"your_coin\" example from the TypeScript SDK examples directory.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/build/guides/system-integrators-guide",
+          "section_title": "Application Integration Guide",
+          "relevance": "This guide provides the steps needed to integrate Aptos into your platform."
+        },
+        {
+          "url": "https://aptos.dev/en/build/guides/first-coin",
+          "section_title": "Your First Coin",
+          "relevance": "This tutorial provides the steps to create a new coin on Aptos using the TypeScript SDK."
+        }
+      ],
+      "category": "Blockchain Concepts, Smart Contract Development, Development Tools, Deployment and Operations",
+      "subcategory": null,
+      "related_concepts": [
+        "SDK Development",
+        "Transaction Management",
+        "CLI Tools",
+        "Account Management",
+        "Blockchain Integration\n\n---"
+      ],
+      "difficulty_level": "Advanced",
+      "question_type": "Implementation"
+    },
+    {
+      "question": "How can I create a lottery system on Aptos using the randomness API and storing the lottery entries in a SmartVector?",
+      "answer": "To create a lottery system on Aptos, you can use the Aptos randomness API to select a winner and SmartVector to store the entries. First, you would need to create a SmartVector to store the entries of the lottery. This can be done using the `new<T: store>(): SmartVector<T>` function. Each entry could be a struct that contains information about the participant.\n\nOnce the entries are gathered, you could use the `let winner_idx = aptos_framework::randomness::u64_range(0, n);` function in Aptos randomness API to select a winner. This function returns a uniformly distributed random number between 0 and n, where n is the number of entries in the SmartVector.\n\nIn the SmartVector, you can use the `borrow<T>(v: &SmartVector<T>, i: u64): &T` function to reference the winning entry using the index provided by the randomness API function.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/build/smart-contracts/randomness",
+          "section_title": "Aptos Roll: A Randomness API",
+          "relevance": "This section provides the method to generate a random number, which is essential for selecting a winner in a lottery system."
+        },
+        {
+          "url": "https://aptos.dev/en/build/smart-contracts/smart-vector",
+          "section_title": "Smart Vector",
+          "relevance": "This section gives information about the SmartVector data structure, which can be used to efficiently store the entries of the lottery."
+        }
+      ],
+      "category": "Smart Contract Development",
+      "subcategory": null,
+      "related_concepts": [
+        "Randomness API",
+        "SmartVector",
+        "Smart Contract Development",
+        "Data Structures\n\n---"
+      ],
+      "difficulty_level": "Intermediate",
+      "question_type": "Implementation"
+    },
+    {
+      "question": "How can I ensure that my Fungible Assets implemented in Move are secure, and only accessible to the rightful owners?",
+      "answer": "To ensure the security of your Fungible Assets implemented in Move, you should use Move's inherent security mechanisms and follow best practices for secure coding. \n\nWhen defining Fungible Assets using the Aptos Fungible Asset Standard, you'll use two Move Objects: `Object<Metadata>` and `Object<FungibleStore>`. The `Object<Metadata>` contains details about the fungible asset, while the `Object<FungibleStore>` stores a count of fungible asset units owned by an account. \n\nOne common security concern is ensuring that only the rightful owners can access these objects. This can be achieved by implementing ownership checks. In the Move language, every `Object<T>` can be accessed by anyone, which means any `Object<T>` can be passed to any function, even if the caller doesn't own it. You should verify that the signer is the rightful owner of the object.\n\nFor example, you can include a function in your contract that takes in an `&signer` and an `Object<T>` as parameters, and checks if the signer is the owner of the object. If not, the function should halt execution and return an error.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/build/smart-contracts/fungible-asset",
+          "section_title": "Aptos Fungible Asset (FA) Standard",
+          "relevance": "This section provides information on how fungible assets are defined and managed in the Move ecosystem, which is crucial to understanding how to properly secure them."
+        },
+        {
+          "url": "https://aptos.dev/en/build/smart-contracts/move-security-guidelines",
+          "section_title": "Move Security Guidelines > Object Ownership Check",
+          "relevance": "This section provides advice on how to implement ownership checks in Move to ensure that only authorized users can access certain objects."
+        }
+      ],
+      "category": "Smart Contract Development, Security Best Practices",
+      "subcategory": null,
+      "related_concepts": [
+        "Move programming language",
+        "Assets",
+        "Security",
+        "Blockchain",
+        "Smart Contract\n\n---"
+      ],
+      "difficulty_level": "Intermediate",
+      "question_type": "Implementation"
+    },
+    {
+      "question": "How can I create a Fungible Asset on the Aptos blockchain that can be used to represent real-world assets?",
+      "answer": "To create a Fungible Asset on the Aptos blockchain that can represent real-world assets, you would need to utilize the Aptos Fungible Asset (FA) Standard. This standard provides a type-safe way to define fungible assets in the Move ecosystem, and it's especially suitable for real-world assets as it allows for customization.\n\nWhen creating a Fungible Asset, you'll use two Move Objects: `Object<Metadata>` and `Object<FungibleStore>`. The `Object<Metadata>` is used to store details about the asset, such as its name, symbol, and decimals. This is where you can customize the asset to represent a real-world asset by setting the Metadata appropriately.\n\nIn addition, the `Object<FungibleStore>` is used to track the quantity of the asset owned by an account. This allows for the representation of ownership of the real-world asset on the blockchain.\n\nFinally, ensure to follow security guidelines to protect your real-world asset represented as Fungible Asset.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/build/smart-contracts/fungible-asset",
+          "section_title": "Aptos Fungible Asset (FA) Standard",
+          "relevance": "This section provides information on how to create and customize Fungible Assets on Aptos, which is necessary for representing real-world assets."
+        },
+        {
+          "url": "https://aptos.dev/en/build/smart-contracts/move-security-guidelines",
+          "section_title": "Move Security Guidelines",
+          "relevance": "This section explains how to ensure the security of assets defined in the Move language, which is crucial when representing real-world assets that have tangible value."
+        }
+      ],
+      "category": "Move Programming Language Basics, Smart Contract Development",
+      "subcategory": null,
+      "related_concepts": [
+        "Blockchain",
+        "Real-world assets",
+        "Fungible assets",
+        "Security",
+        "Smart Contract"
+      ],
+      "difficulty_level": "Beginner",
+      "question_type": "Implementation"
+    },
+    {
+      "question": "How can I efficiently filter data when querying the Indexer API?",
+      "answer": "Efficiency in filtering data when querying the Indexer API can be achieved through the smart use of indexes for each table. Some indexes are composite B-tree indexes, meaning they consist of multiple columns. B-tree indexes are ordered and perform optimally when queries utilize a left-most prefix of the indexed columns. Therefore, consider structuring your queries to utilize a left-most prefix of the indexed columns for efficient filtering.\n\nSOURCE:\n- URL: https://aptos.dev/en/build/er/er-api/er-referencex\n  SECTION: Filtering (with `where` clauses)\n  RELEVANCE: This section gives specific advice on how to filter data efficiently using the Indexer API.\n\nCATEGORY: API Usage\nDIFFICULTY: Intermediate\nQUESTION TYPE: Single Concept\nRELATED CONCEPTS: Indexer API, Data Filtering, Query Optimization, B-tree Index, GraphQL",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/build/er/er-api/er-reference",
+          "section_title": "Filtering (with `where` clauses)",
+          "relevance": "This section gives specific advice on how to filter data efficiently using the Indexer API."
+        }
+      ],
+      "category": "API Usage",
+      "subcategory": null,
+      "related_concepts": [
+        "Indexer API",
+        "Data Filtering",
+        "Query Optimization",
+        "B-tree Index",
+        "GraphQL"
+      ],
+      "difficulty_level": "Intermediate",
+      "question_type": "Single Concept"
+    },
+    {
+      "question": "How can I read the events emitted during the execution of my Move smart contract on the Aptos Testnet?",
+      "answer": "To read the events emitted by your Move smart contract while testing on the Aptos Testnet, you would typically take the following steps:\n\n1. Write your Move smart contract. While doing so, define your module events using the `#[event]` attribute for any struct that has `drop` and `store` abilities. \n\n2. Deploy your smart contract to the Aptos Testnet. You can use the Testnet Faucet to acquire test tokens if required.\n\n3. Execute your smart contract and trigger the events you need to read. \n\n4. Query the module events using the GraphQL API. You can find example module events and their indices on the Aptos explorer.\n\nRemember that events are stored in a separate merkle tree (event accumulator) for each transaction. However, they are ephemeral and independent of the state tree, so the MoveVM does not have read access to events when executing a transaction in production.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/network/blockchain/events",
+          "section_title": "Events",
+          "relevance": "This section provides information on how to define events in the Move programming language and how to query these events using the GraphQL API."
+        },
+        {
+          "url": "https://aptos.dev/en/network/nodes/networks",
+          "section_title": "Aptos Networks",
+          "relevance": "This section provides information on the Aptos Testnet, which is the network on which the developer would be testing their smart contract."
+        }
+      ],
+      "category": "Smart Contract Development",
+      "subcategory": null,
+      "related_concepts": [
+        "Move Programming Language",
+        "Smart Contracts",
+        "Events",
+        "Aptos Testnet",
+        "GraphQL API"
+      ],
+      "difficulty_level": "Intermediate",
+      "question_type": "Implementation"
+    },
+    {
+      "question": "How can I setup and debug a local Aptos network using CLI and Docker for testing my smart contracts?",
+      "answer": "Setting up a local Aptos network can be beneficial for testing your smart contracts without any rate-limits and internet access. Here is a step-by-step guide:\n\n1. Ensure you have the Aptos CLI installed. You can verify this by running `aptos --version`.\n2. You must also have Docker Desktop installed as it's required for running the Indexer API. Verify your Docker installation by running `docker --version` and start Docker.\n3. Now, run the appropriate command in a new terminal to start your private network. Wait until you see the message `Setup is complete, you can now use the local testnet!` which indicates the local network is running.\n\nTo debug your network, you will need to monitor certain node metrics such as consensus metrics (e.g., `aptos_consensus_proposals_count`, `aptos_consensus_last_committed_round`, `aptos_consensus_timeout_count`) which indicate the node's participation in the network and can help diagnose issues like network difficulties.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/network/nodes/localnet/local-development-network",
+          "section_title": "Running a Local Network via Aptos CLI",
+          "relevance": "This section provides the steps to set up a local network for testing."
+        },
+        {
+          "url": "https://aptos.dev/en/network/nodes/measure/important-metrics",
+          "section_title": "Important Node Metrics",
+          "relevance": "This section outlines the key metrics to monitor for debugging the network."
+        }
+      ],
+      "category": "Deployment and Operations",
+      "subcategory": null,
+      "related_concepts": ["Docker", "Aptos CLI", "Node Metrics\n\n---"],
+      "difficulty_level": "Beginner",
+      "question_type": "Implementation"
+    },
+    {
+      "question": "I'm planning to run an Aptos validator and VFN on separate machines in the mainnet. What are the hardware requirements I need to consider, and why is resource isolation important?",
+      "answer": "Running an Aptos validator and VFN requires that both nodes run on two separate and independent machines. These machines should be well-provisioned to maintain ~30,000 transactions per second (TPS). The hardware specifications necessary to achieve this performance can be found in the Node Requirements section of the Aptos documentation. \n\nResource isolation between the validator and the VFN is crucial for security and to ensure that the nodes do not encounter performance degradation, instability, or failures when under load. This means that the validator and VFN require sufficient hardware separately.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/network/nodes/validator-node/node-requirements",
+          "section_title": "Node Requirements",
+          "relevance": "This section provides information on the hardware requirements and the importance of resource isolation when running an Aptos validator and VFN."
+        }
+      ],
+      "category": "Deployment and Operations",
+      "subcategory": null,
+      "related_concepts": [
+        "Node Requirements",
+        "Resource Isolation",
+        "Validator Deployment",
+        "VFN Deployment",
+        "Hardware Specifications"
+      ],
+      "difficulty_level": "Advanced",
+      "question_type": "Implementation"
+    },
+    {
+      "question": "I'm a beginner with Move and Aptos. How can I start a Move package from a template to begin developing on Aptos?",
+      "answer": "You can utilize the `aptos move init` command to initialize a package using a template. For instance, to start a package using the `hello-blockchain` template, you would run `aptos move init --name hello_blockchain --template hello-blockchain`. This command will create a `hello_blockchain.move` file under `sources` to help get you started. \n\nIf you want to explore more templates, use `aptos move init --help` to see a list of all available templates.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/build/cli/start-from-template",
+          "section_title": "Start a Move package from a template",
+          "relevance": "This section provides a step-by-step guide on how to start a Move package from a template in Aptos."
+        }
+      ],
+      "category": "Move Programming Language Basics",
+      "subcategory": null,
+      "related_concepts": [
+        "Move Programming Language",
+        "Aptos Blockchain",
+        "Package Initialization",
+        "Smart Contract Development\n\n---"
+      ],
+      "difficulty_level": "Beginner",
+      "question_type": "Single_concept"
+    },
+    {
+      "question": "I want to create and manage a fungible asset with multisig account in Aptos. Could you guide me through the process?",
+      "answer": "To create a fungible asset controlled by an Aptos framework multisig account, you first need a well-designed smart contract based on the fungible asset standard. An example code for this is available in the `aptos-core` repo. You need to clone this repo and navigate to the `managed_fungible_asset` directory. Then, publish this package onto your `default` account using CLI. Do the same for `multisig_managed_coin` package which calls functions defined in `managed_fungible_asset`. Make sure both modules are published on the same address. Also, ensure your account is funded before publishing modules. After publishing, you can start the `multisig_managed_coin` example and run it.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/build/guides/multisig-managed-fungible-asset",
+          "section_title": "Manage Fungible Assets with Multisig",
+          "relevance": "This section provides a step-by-step guide on how to create and manage a fungible asset with multisig account in Aptos."
+        }
+      ],
+      "category": "Smart Contract Development",
+      "subcategory": null,
+      "related_concepts": [
+        "Multisig Account",
+        "Fungible Assets",
+        "Smart Contracts",
+        "CLI Tools\n\n---"
+      ],
+      "difficulty_level": "Intermediate",
+      "question_type": "Implementation"
+    },
+    {
+      "question": "How do I handle third-party dependencies in my Move smart contract, and what considerations should I keep in mind when sourcing these dependencies?",
+      "answer": "Third-party dependencies are external modules that a controlled module interacts with. They can be important if your smart contract needs to interact with other on-chain entities. For example, a multi-DEX router utilizes third-party dependencies to consolidate multiple DEX interactions into a single transaction.\n\nYou can specify third-party dependencies in the `Move.toml` file of your Move package. By default, `Move.toml` includes `AptosFramework` as a git repository dependency. When you run Aptos CLI commands, updates to the dependency are automatically retrieved and compiled against.\n\nWhen sourcing dependencies, consider their reliability and available information. Source code that is verified against the on-chain deployed module, like the Git Repository and Local Source Code, should always be preferred. You can include third-party source code in the `sources` directory, treating it the same as custom code. If neither of those are available, there are other options to depend on usable code, like decompiled code, bytecode, and ABI-crafted code.",
+      "sources": [
+        {
+          "url": "https://aptos.dev/en/build/smart-contracts/create-package",
+          "section_title": "Create Package",
+          "relevance": "This section explains how to initialize a Move package and specify dependencies in `Move.toml`."
+        },
+        {
+          "url": "https://aptos.dev/en/build/smart-contracts/third-party-dependencies",
+          "section_title": "Third Party Dependencies",
+          "relevance": "This section provides guidance on handling and sourcing third-party dependencies."
+        }
+      ],
+      "category": "Move Programming Language Basics, Smart Contract Development",
+      "subcategory": null,
+      "related_concepts": [
+        "Move Packages",
+        "Aptos CLI",
+        "Third-party Dependencies",
+        "Sourcing Dependencies",
+        "Smart Contracts"
+      ],
+      "difficulty_level": "Intermediate",
+      "question_type": "Implementation"
+    }
+  ]
 }
-
-
-
-    

@@ -8,6 +8,8 @@ import './styles/chatbot.css';
 export function ChatWidget({
   messages,
   isLoading = false,
+  isGenerating = false,
+  isTyping = false,
   hasMoreMessages = false,
   onSendMessage,
   onStopGenerating,
@@ -60,6 +62,13 @@ export function ChatWidget({
               className={messageClassName}
             />
           ))}
+          {isGenerating && !isTyping && (
+            <div className="chat-message assistant thinking">
+              <div className="message-content">
+                <div className="thinking-indicator">AI is thinking...</div>
+              </div>
+            </div>
+          )}
         </div>
         <ChatInput
           onSend={onSendMessage}

@@ -101,8 +101,6 @@ export class ChatbotClient {
       ...(chatId && { chat_id: chatId }),
     };
 
-    console.log('Sending request:', request);
-
     const response = await this.fetchWithAuth(`${this.config.apiUrl}/api/message/stream`, {
       method: 'POST',
       body: JSON.stringify(request),
@@ -116,7 +114,6 @@ export class ChatbotClient {
     // Check if the response is ok
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Error response:', errorText);
       throw new Error(
         `API request failed: ${response.status} ${response.statusText}\n${errorText}`,
       );

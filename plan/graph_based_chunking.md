@@ -5,6 +5,7 @@ This document outlines an approach to graph-based chunking for improved retrieva
 ## Current Approach vs. Graph-Based Enhancement
 
 ### Current Approach
+
 Most RAG systems for technical documentation rely primarily on semantic similarity between query and chunks, with some hierarchical information used for post-retrieval enrichment. This approach has limitations:
 
 - It misses important contextual information from document structure
@@ -12,6 +13,7 @@ Most RAG systems for technical documentation rely primarily on semantic similari
 - It fails to capture code/concept dependencies that are critical for understanding
 
 ### Graph-Based Enhancement
+
 Graph-based chunking creates and utilizes multiple relationship types between content chunks, enabling more intelligent traversal of documentation during retrieval. This leads to more comprehensive, contextually relevant results.
 
 ## Types of Relationships in Technical Documentation
@@ -19,25 +21,30 @@ Graph-based chunking creates and utilizes multiple relationship types between co
 For developer documentation, especially for blockchain platforms, the following relationship types are most valuable:
 
 ### 1. Structural Hierarchy
+
 - **Document Structure**: Parent-child from document nesting (modules → classes → methods)
 - **Code Structure**: Package → module → class → method hierarchy
 - **Example**: When a developer asks about `aptos_move::call_function()`, they likely need context from the parent module
 
 ### 2. Sequential Context
+
 - **Adjacent Chunks**: For installation steps, tutorials, or multi-step explanations
 - **Example**: When retrieving a step in a transaction creation process, the steps before and after provide essential context
 
 ### 3. Semantic Relationships
+
 - **Similar Implementation Patterns**: Code examples implementing similar concepts
 - **Related Concepts**: Chunks discussing related theoretical concepts
 - **Example**: Connecting "resource accounts" with "resource account creation" and example implementations
 
 ### 4. Referential Links
+
 - **Import/Usage Relations**: Which components use or are used by this component
 - **Prerequisite Knowledge**: What concepts must be understood first
 - **Example**: When explaining Move modules, linking to type abilities which affect how they can be used
 
 ### 5. Blockchain-Specific Relationships
+
 - **On-chain/Off-chain Components**: Connecting on-chain code with off-chain interactions
 - **Smart Contract Interfaces**: Linking contract definitions with their transaction builders
 - **Error-Solution Pairs**: Common errors with their solutions
@@ -80,17 +87,17 @@ When retrieving content, use a multi-stage process:
 def enhanced_graph_retrieval(initial_chunks, chunk_map, traversal_depth=1):
     """Expand retrieved chunks using graph relationships"""
     enhanced_results = set(initial_chunks)
-    
+
     for chunk in initial_chunks:
         chunk_id = chunk.get("id")
         if not chunk_id:
             continue
-            
+
         # 1. Add parent context (doc structure hierarchy)
         parent_id = chunk.get("metadata", {}).get("parent_id")
         if parent_id and parent_id in chunk_map:
             enhanced_results.add(chunk_map[parent_id])
-            
+
         # 2. Add sequential context (previous/next chunks)
         sequence_position = chunk.get("metadata", {}).get("sequence_position")
         section = chunk.get("metadata", {}).get("section")
@@ -99,17 +106,17 @@ def enhanced_graph_retrieval(initial_chunks, chunk_map, traversal_depth=1):
             for adj_chunk in chunk_map.values():
                 adj_section = adj_chunk.get("metadata", {}).get("section")
                 adj_position = adj_chunk.get("metadata", {}).get("sequence_position")
-                if (adj_section == section and 
+                if (adj_section == section and
                     abs(adj_position - sequence_position) <= traversal_depth):
                     enhanced_results.add(adj_chunk)
-        
+
         # 3. Add usage examples for API components
         if chunk.get("metadata", {}).get("is_api_definition"):
             # Find chunks that reference this API
             for potential_usage in chunk_map.values():
                 if chunk_id in potential_usage.get("metadata", {}).get("references", []):
                     enhanced_results.add(potential_usage)
-                    
+
         # 4. Add implementation examples for concepts
         if chunk.get("metadata", {}).get("is_concept"):
             # Find related implementation examples
@@ -118,7 +125,7 @@ def enhanced_graph_retrieval(initial_chunks, chunk_map, traversal_depth=1):
                     impl_chunk.get("metadata", {}).get("is_code_example") and
                     chunk_id in impl_chunk.get("metadata", {}).get("related_concepts", [])):
                     enhanced_results.add(impl_chunk)
-    
+
     return list(enhanced_results)
 ```
 
@@ -126,28 +133,32 @@ def enhanced_graph_retrieval(initial_chunks, chunk_map, traversal_depth=1):
 
 Different types of developer questions benefit from different relationship traversals:
 
-* **"How to" questions**: Prioritize examples, sequential steps, and implementations
-* **"What is" questions**: Prioritize concept explanations and parent context
-* **"Why" questions**: Prioritize explanations that connect concepts
-* **Error-related questions**: Prioritize error-solution pairs and diagnostic information
+- **"How to" questions**: Prioritize examples, sequential steps, and implementations
+- **"What is" questions**: Prioritize concept explanations and parent context
+- **"Why" questions**: Prioritize explanations that connect concepts
+- **Error-related questions**: Prioritize error-solution pairs and diagnostic information
 
 ## Applications to Aptos/Move Documentation
 
 For Aptos and Move specifically, these relationship types are particularly valuable:
 
 ### 1. Move Module Hierarchies
+
 - Connect module definitions with their resources and functions
 - Link standard library modules with custom implementations
 
 ### 2. Transaction Flow Context
+
 - Connect transaction builder code with on-chain function implementations
 - Link error handling with potential transaction failures
 
 ### 3. Capability Dependencies
+
 - Connect resources with their required abilities (copy, drop, store, key)
 - Link type constraints with their implications for contract design
 
 ### 4. Smart Contract Patterns
+
 - Connect design patterns with their implementations
 - Link common vulnerabilities with secure implementations
 
@@ -177,4 +188,4 @@ Graph traversal can be computationally expensive. To optimize:
 
 ---
 
-*This approach represents a significant enhancement over purely semantic retrieval systems and is particularly well-suited for complex technical documentation with strong hierarchical and referential relationships.* 
+_This approach represents a significant enhancement over purely semantic retrieval systems and is particularly well-suited for complex technical documentation with strong hierarchical and referential relationships._

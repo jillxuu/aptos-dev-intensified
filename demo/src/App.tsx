@@ -8,6 +8,8 @@ function ChatWidgetContainer() {
     messages = [],
     sendMessage,
     isLoading = false,
+    isGenerating = false,
+    isTyping = false,
     hasMoreMessages = false,
     detailedMode = false,
     chats = [],
@@ -28,6 +30,8 @@ function ChatWidgetContainer() {
       messages={messages}
       onSendMessage={sendMessage}
       isLoading={isLoading}
+      isGenerating={isGenerating}
+      isTyping={isTyping}
       hasMoreMessages={hasMoreMessages}
       detailedMode={detailedMode}
       showSidebar={true}
