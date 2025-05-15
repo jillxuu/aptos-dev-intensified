@@ -290,7 +290,7 @@ class ChatMessageRequest(BaseModel):
     rag_provider: Optional[str] = (
         None  # If not provided, will use DEFAULT_RAG_PROVIDER from server config
     )
-    temperature: Optional[float] = 0.1  # Set temperature to 0.0
+    temperature: Optional[float] = 0.1  # Set temperature to 0.1
     use_multi_step: Optional[bool] = USE_MULTI_STEP_RAG  # Use the global config setting
 
 
