@@ -8,6 +8,7 @@ and retrieving topic-aware context.
 import os
 import json
 import logging
+import time
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 from langchain_core.documents import Document
@@ -183,8 +184,13 @@ async def get_topic_aware_context(
     Returns:
         List of relevant chunks with metadata
     """
+    # Start timing the entire function
+    start_time = time.time()
+    logger.info(f"[TOPIC-AWARE] Starting retrieval for query: '{query}'")
+    
     try:
-        # Validate inputs
+        # Validate inputs - Step 1: Input validation
+        validation_start = time.time()
         if not vector_store:
             logger.error("[TOPIC-AWARE] Vector store is None - cannot proceed")
             return []
@@ -192,27 +198,68 @@ async def get_topic_aware_context(
         if not enhanced_chunks:
             logger.error("[TOPIC-AWARE] No enhanced chunks provided - cannot proceed")
             return []
+        validation_time = time.time() - validation_start
+        logger.info(f"[TOPIC-PERF] Input validation took {validation_time:.4f}s")
 
+        # Step 2: Create chunk map
+        chunk_map_start = time.time()
         # Create a mapping of chunk IDs to enhanced chunks for quick lookup
         chunk_map = {chunk["id"]: chunk for chunk in enhanced_chunks}
+        
+        # Log the number of items in the chunk map for debugging
+        logger.info(f"[TOPIC-AWARE] Query: '{query}', chunk map size: {len(chunk_map)}")
+        chunk_map_time = time.time() - chunk_map_start
+        logger.info(f"[TOPIC-PERF] Chunk map creation took {chunk_map_time:.4f}s")
 
-        # Get relevant documents from vector store
+        # Step 3: Vector search
+        vector_search_start = time.time()
         try:
             docs_with_scores = vector_store.similarity_search_with_score(query, k=k)
+            logger.info(f"[TOPIC-AWARE] Found {len(docs_with_scores)} documents for query: {query}")
+            
+            # Log a few result metadata samples for debugging
+            if docs_with_scores:
+                logger.info(f"[TOPIC-AWARE] First document metadata keys: {list(docs_with_scores[0][0].metadata.keys())}")
+                logger.info(f"[TOPIC-AWARE] First document content preview: {docs_with_scores[0][0].page_content[:100]}...")
         except Exception as e:
             logger.error(f"[TOPIC-AWARE] Error during similarity search: {str(e)}")
             return []
+        vector_search_time = time.time() - vector_search_start
+        logger.info(f"[TOPIC-PERF] Vector search took {vector_search_time:.4f}s")
 
-        # Process results
+        # Step 4: Process results
+        process_start = time.time()
         results = []
+        skipped_doc_count = 0
+        processed_doc_count = 0
+        
+        # Step 4a: Initial result extraction
+        initial_processing_start = time.time()
         for i, (doc, score) in enumerate(docs_with_scores):
             # Try both chunk_id and id in metadata
             chunk_id = doc.metadata.get("chunk_id") or doc.metadata.get("id")
 
             if not chunk_id:
+                skipped_doc_count += 1
                 logger.warning(
                     f"[TOPIC-AWARE] Document {i+1} has no chunk_id or id in metadata"
                 )
+                # Add basic result even without chunk ID
+                result = {
+                    "content": doc.page_content,
+                    "section": doc.metadata.get("section", ""),
+                    "source": doc.metadata.get("source", ""),
+                    "summary": doc.metadata.get("summary", ""),
+                    "score": float(score),
+                    "is_priority": doc.metadata.get("is_priority", False),
+                    "related_documents": [],
+                    "is_code_block": doc.metadata.get("contains_code", False),
+                    "code_summary": None,
+                    "code_languages": doc.metadata.get("code_languages", []),
+                    "parent_info": None,
+                }
+                results.append(result)
+                processed_doc_count += 1
                 continue
 
             if chunk_id not in chunk_map:
@@ -232,6 +279,8 @@ async def get_topic_aware_context(
             if doc.metadata.get("contains_code") and doc.metadata.get("code_summary"):
                 code_summary = doc.metadata.get("code_summary")
 
+            # Step 4b: Process related documents - most expensive part
+            related_start = time.time()
             # Get related chunks
             related_ids = enhanced_chunk["metadata"].get("related_topics", [])
             related_chunks = []
@@ -257,7 +306,10 @@ async def get_topic_aware_context(
 
             # Sort related chunks by similarity
             related_chunks.sort(key=lambda x: x["similarity"], reverse=True)
-
+            related_time = time.time() - related_start
+            
+            # Step 4c: Process parent information
+            parent_start = time.time()
             # Get hierarchical relationships if available
             parent_id = doc.metadata.get("parent_id")
             parent_info = None
@@ -271,6 +323,7 @@ async def get_topic_aware_context(
                             "summary": chunk["metadata"].get("summary", ""),
                         }
                         break
+            parent_time = time.time() - parent_start
 
             # Format result
             result = {
@@ -288,10 +341,37 @@ async def get_topic_aware_context(
             }
 
             results.append(result)
+            processed_doc_count += 1
+            
+            # For the first document only, log detailed timing
+            if i == 0:
+                logger.info(f"[TOPIC-PERF] First document: Related processing took {related_time:.4f}s, Parent processing took {parent_time:.4f}s")
+        
+        initial_processing_time = time.time() - initial_processing_start
+        logger.info(f"[TOPIC-PERF] Initial result processing took {initial_processing_time:.4f}s")
 
+        # Step 4d: Sort results
+        sort_start = time.time()
         # Sort results by score and priority status
         results.sort(key=lambda x: (not x["is_priority"], -x["score"]))
+        sort_time = time.time() - sort_start
+        logger.info(f"[TOPIC-PERF] Sorting results took {sort_time:.4f}s")
+        
+        process_time = time.time() - process_start
+        logger.info(f"[TOPIC-PERF] Total result processing took {process_time:.4f}s")
+
+        # Log summary statistics
+        total_time = time.time() - start_time
+        logger.info(f"[TOPIC-AWARE] Results summary: {processed_doc_count} processed, {skipped_doc_count} skipped due to missing IDs")
+        logger.info(f"[TOPIC-PERF] PERFORMANCE SUMMARY:")
+        logger.info(f"[TOPIC-PERF] - Input validation: {validation_time:.4f}s ({(validation_time/total_time)*100:.1f}%)")
+        logger.info(f"[TOPIC-PERF] - Chunk map creation: {chunk_map_time:.4f}s ({(chunk_map_time/total_time)*100:.1f}%)")
+        logger.info(f"[TOPIC-PERF] - Vector search: {vector_search_time:.4f}s ({(vector_search_time/total_time)*100:.1f}%)")
+        logger.info(f"[TOPIC-PERF] - Result processing: {process_time:.4f}s ({(process_time/total_time)*100:.1f}%)")
+        logger.info(f"[TOPIC-PERF] - Total time: {total_time:.4f}s")
+        
         return results
     except Exception as e:
-        logger.error(f"[TOPIC-AWARE] Error retrieving topic-aware context: {str(e)}")
+        total_time = time.time() - start_time
+        logger.error(f"[TOPIC-AWARE] Error retrieving topic-aware context after {total_time:.4f}s: {str(e)}")
         return []

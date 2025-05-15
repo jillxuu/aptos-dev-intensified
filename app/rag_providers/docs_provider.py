@@ -12,6 +12,7 @@ from app.utils.topic_chunks import (
     initialize_vector_store,
     get_topic_aware_context,
 )
+from app.utils.adaptive_retrieval import adaptive_multi_step_retrieval
 from app.path_registry import path_registry
 from app.config import (
     PROVIDER_TYPES,
@@ -162,24 +163,27 @@ class DocsRAGProvider(RAGProvider):
         k: int = 5,
         include_series: bool = True,
         provider_type: Optional[PROVIDER_TYPES] = None,
+        use_multi_step: bool = True,
     ) -> List[Dict[str, Any]]:
         """
         Get relevant context from the documentation using topic-based retrieval.
-
+        Now supports adaptive multi-step retrieval for improved results.
+        
         Args:
             query: The user query
             k: Number of top documents to return
             include_series: Whether to include related documents from the same topic
             provider_type: Optional provider type to use for this query
-
+            use_multi_step: Whether to use multi-step retrieval
+            
         Returns:
             List of dictionaries containing content, section, source, and metadata
         """
         logger.info(f"[DOCS-RAG] Starting context retrieval for query: {query}")
         logger.info(
-            f"[DOCS-RAG] Parameters: k={k}, include_series={include_series}, provider_type={provider_type}"
+            f"[DOCS-RAG] Parameters: k={k}, include_series={include_series}, provider_type={provider_type}, use_multi_step={use_multi_step}"
         )
-
+        
         if not self._initialized:
             logger.warning("[DOCS-RAG] Provider not initialized - cannot proceed")
             return []
@@ -209,16 +213,27 @@ class DocsRAGProvider(RAGProvider):
                 f"[DOCS-RAG] Using vector store with {len(self.enhanced_chunks)} chunks"
             )
 
-            # Get relevant context using topic-aware retrieval
-            logger.info("[DOCS-RAG] Calling get_topic_aware_context")
-            results = await get_topic_aware_context(
-                query=query,
-                vector_store=self.vector_store,
-                enhanced_chunks=self.enhanced_chunks,
-                k=k,
-            )
+            # Retrieve context using either adaptive multi-step or standard approach
+            if use_multi_step:
+                logger.info("[DOCS-RAG] Using adaptive multi-step retrieval")
+                results = await adaptive_multi_step_retrieval(
+                    query=query,
+                    vector_store=self.vector_store,
+                    enhanced_chunks=self.enhanced_chunks,
+                    k=k
+                )
+            else:
+                # Use the existing topic-aware retrieval
+                logger.info("[DOCS-RAG] Using standard topic-aware retrieval")
+                results = await get_topic_aware_context(
+                    query=query,
+                    vector_store=self.vector_store,
+                    enhanced_chunks=self.enhanced_chunks,
+                    k=k
+                )
+            
             logger.info(
-                f"[DOCS-RAG] Retrieved {len(results)} results from topic-aware context"
+                f"[DOCS-RAG] Retrieved {len(results)} results"
             )
 
             # Format results
@@ -241,9 +256,11 @@ class DocsRAGProvider(RAGProvider):
                     "summary": result["summary"],
                     "score": result["score"],
                     "metadata": {
-                        "related_documents": result["related_documents"],
-                        "is_priority": result["is_priority"],
+                        "related_documents": result.get("related_documents", []),
+                        "is_priority": result.get("is_priority", False),
                         "docs_path": self._current_path,
+                        "retrieval_type": result.get("retrieval_type", "primary"),
+                        "retrieval_query": result.get("retrieval_query", query),
                     },
                 }
                 formatted_results.append(formatted_result)
@@ -254,6 +271,9 @@ class DocsRAGProvider(RAGProvider):
                 logger.debug(f"[DOCS-RAG]   Score: {formatted_result['score']:.4f}")
                 logger.debug(
                     f"[DOCS-RAG]   Priority: {formatted_result['metadata']['is_priority']}"
+                )
+                logger.debug(
+                    f"[DOCS-RAG]   Retrieval type: {formatted_result['metadata']['retrieval_type']}"
                 )
                 logger.debug(
                     f"[DOCS-RAG]   Related docs: {len(formatted_result['metadata']['related_documents'])}"
@@ -267,7 +287,7 @@ class DocsRAGProvider(RAGProvider):
                 )
                 for i, result in enumerate(sorted_results[:3]):
                     logger.info(
-                        f"[DOCS-RAG] {i+1}. {result['section']} (score: {result['score']:.4f})"
+                        f"[DOCS-RAG] {i+1}. {result['section']} (score: {result['score']:.4f}, type: {result['metadata']['retrieval_type']})"
                     )
 
             logger.info(

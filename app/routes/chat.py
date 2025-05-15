@@ -21,7 +21,7 @@ import asyncio
 import re
 from fastapi import BackgroundTasks
 import json
-from app.config import get_docs_url, DOCS_BASE_URLS, DEFAULT_PROVIDER
+from app.config import get_docs_url, DOCS_BASE_URLS, DEFAULT_PROVIDER, USE_MULTI_STEP_RAG
 from app.path_registry import path_registry
 
 # Configure logging
@@ -44,7 +44,7 @@ embeddings_model = OpenAIEmbeddings(
 # Initialize chat model
 chat_model = ChatOpenAI(
     model_name="gpt-4.1",
-    temperature=0.1,
+    temperature=0.05,
     openai_api_key=os.getenv("OPENAI_API_KEY"),
     streaming=True,
 )
@@ -68,7 +68,7 @@ When answering developer questions:
    - Never hallucinate features, functions, or capabilities not explicitly mentioned in the documentation
    - If multiple documents contain relevant information, synthesize them into a coherent answer
    - If the retrieved context doesn't contain relevant information to the question:
-     * Clearly state that the retrieved relevant documentation doesn't address the question
+     * Clearly state that the you don't have the information
      * Don't attempt to answer with information not present in the context
      * Suggest possible alternative search terms the user might try
      * Recommend relevant sections of documentation that might contain the answer
@@ -91,7 +91,9 @@ When answering developer questions:
    - Use exact technical terminology from the Aptos documentation
    - Maintain precise technical meanings - don't simplify at the expense of accuracy
    - For Move code, follow exact Aptos Move syntax conventions
+   - Prefer modern and latest features or code examples over deprecated or legacy code if there are multiple similar options.
    - Differentiate between Aptos-specific implementations and general blockchain concepts
+   - Differentiate between similar looking concepts and code. For example, when asked about creating Fungile assets in Move, do not respond with coinV1 initialization code which looks very similar.
 
 5. CODE EXAMPLES:
    - Provide complete, working code examples when relevant
@@ -114,13 +116,18 @@ When answering developer questions:
    - DO NOT construct URLs manually - only use exact URLs from the list above
    - If referring to API endpoints, include the complete endpoint path
 
-8. ANSWER STRUCTURE:
+8. ANSWER STRUCTURE AND RESOURCE DEDUPLICATION:
    - Begin with a direct answer to the question
    - Follow with deeper technical explanation
-   - Include relevant code examples
-   - End with links to additional documentation
+   - Include relevant code examples with proper citations
    - For highly technical questions, include a brief explanation of underlying concepts
-
+   - When citing resources in your answer, keep track of which documents you've referenced
+   - End with an "Additional Resources" section that ONLY includes:
+     * Resources relevant to the topic but NOT already cited in your main answer
+     * Documentation that provides supplementary information beyond what was covered
+     * Resources that would help the developer explore related concepts or implementation details
+   - Never repeat in the "Additional Resources" section any documents that were already cited in the main answer
+   
 9. HANDLING INFORMATION GAPS:
    - If you can identify that specific information is missing:
      * State exactly what additional information would be needed
@@ -520,6 +527,7 @@ async def generate_ai_response(
     firestore_chat: FirestoreChat,
     background_tasks: BackgroundTasks,
     rag_provider: str = None,
+    use_multi_step: bool = USE_MULTI_STEP_RAG,  # Use config setting as default
 ) -> AsyncGenerator[str, None]:
     """
     Generate AI response using RAG.
@@ -530,6 +538,7 @@ async def generate_ai_response(
         firestore_chat: The Firestore chat instance
         background_tasks: FastAPI background tasks
         rag_provider: The RAG provider to use
+        use_multi_step: Whether to use multi-step retrieval
 
     Returns:
         An async generator that yields chunks of the AI response
@@ -599,7 +608,11 @@ async def generate_ai_response(
         context_retrieval_start = datetime.now()
         logger.info("[RAG] Retrieving relevant context...")
         context_chunks = await rag_provider_obj.get_relevant_context(
-            message, k=7, include_series=is_process_query, provider_type=provider_name
+            message, 
+            k=7, 
+            include_series=is_process_query, 
+            provider_type=provider_name,
+            use_multi_step=use_multi_step  # Enable adaptive multi-step retrieval
         )
         context_retrieval_time = (
             datetime.now() - context_retrieval_start
@@ -840,16 +853,17 @@ def get_firestore_chat() -> FirestoreChat:
             "content": {
                 "application/json": {
                     "example": json.loads(
-                        """
-                    {
+                        f"""
+                    {{
                         "content": "What is Aptos Move?",
                         "client_id": "client-123",
                         "message_id": "msg-123",
                         "chat_id": null,
                         "role": "user",
                         "rag_provider": null,
-                        "temperature": 0.7
-                    }
+                        "temperature": 0.1,
+                        "use_multi_step": {str(USE_MULTI_STEP_RAG).lower()}
+                    }}
                     """
                     )
                 }
@@ -877,7 +891,8 @@ async def unified_chat_message_stream(
       - **chat_id** (optional): Chat ID to add message to (creates new chat if not provided)
       - **role** (optional): Message role (defaults to "user")
       - **rag_provider** (optional): RAG provider to use (uses server default if not provided)
-      - **temperature** (optional): Temperature for LLM generation (defaults to 0.7)
+      - **temperature** (optional): Temperature for LLM generation (defaults to 0.1)
+      - **use_multi_step** (optional): Whether to use multi-step retrieval (defaults to True)
     - **rag_provider**: Optional override for the RAG provider specified in the request
 
     Returns:
@@ -899,6 +914,7 @@ async def unified_chat_message_stream(
         firestore_chat=firestore_chat,
         background_tasks=background_tasks,
         rag_provider=rag_provider or chat_request.rag_provider,
+        use_multi_step=chat_request.use_multi_step,
     )
 
     # Create a custom generator that streams the AI response directly
