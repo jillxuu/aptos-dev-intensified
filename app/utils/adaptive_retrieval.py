@@ -121,22 +121,6 @@ async def analyze_follow_up_needs(query: str, initial_results: List[Dict[str, An
     """
     start_time = time.time()
     
-    # Skip follow-up analysis for shorter, simpler queries
-    if len(query.split()) < 12 and len(initial_results) >= 3:
-        logger.info(f"[ADAPTIVE-RAG] Simple query with sufficient results, skipping follow-up analysis")
-        return {"is_complete": True, "follow_up_queries": []}
-    
-    # Format current results for analysis with fallbacks for missing fields
-    if not initial_results or len(initial_results) < 2:
-        logger.warning("[ADAPTIVE-RAG] Insufficient initial results, generating generic follow-ups")
-        return {
-            "is_complete": False, 
-            "follow_up_queries": [
-                f"implementation example for {query}",
-                f"code sample for {query}"
-            ]
-        }
-    
     # Only analyze if we have enough context to make a decision
     top_results = initial_results[:5]
     
