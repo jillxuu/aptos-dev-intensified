@@ -127,6 +127,8 @@ The anchor tags (like `#current-balance-for-a-coin` in URLs such as `https://apt
    - The resulting URL `https://aptos.dev/en/concepts/coin-and-token/#current-balance-for-a-coin` is invalid because the anchor exists in a child page, not the parent directory
 
 4. **Debugging Example**:
+
+    (This is a fake example)
    ```
    Original file: /en/concepts/coin-and-token/coin.md 
    Section: "Current Balance for a Coin"
@@ -146,7 +148,8 @@ The anchor tags (like `#current-balance-for-a-coin` in URLs such as `https://apt
    - This URL fails because the anchor exists on "coin.md" page, not the directory page
    ```
 
-## Proposed Solutions
+## Potential Solutions
+(We may just need fixing in PathRegistry, and that's all)
 
 ### 1. Source Path Preservation
 
