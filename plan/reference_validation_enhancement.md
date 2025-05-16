@@ -1,212 +1,315 @@
-# Reference Validation Enhancement Plan
+# Documentation URL Reference Improvement Plan
 
-## Problem Statement
+## Current System Architecture
 
-Our RAG-powered chatbot currently produces responses that contain invalid or incomplete references to documentation. Specifically:
+### Adaptive Multi-Step Retrieval Implementation
 
-1. **Invalid URL Fragments**: The chatbot generates URLs with fragments (e.g., `#current-balance-for-a-coin`) that don't correspond to actual anchor tags on the destination pages, leading users to general pages instead of specific sections.
+Our current RAG system utilizes an adaptive multi-step retrieval approach implemented in `app/utils/adaptive_retrieval.py`. The system works as follows:
 
-2. **Inconsistent Reference Formatting**: References in responses vary in format, with some presented as links, others as plaintext, creating an inconsistent user experience.
+1. **Query Analysis**: When a user asks a question, the system analyzes the query to determine its complexity and generates multiple retrieval queries using `generate_retrieval_queries()`.
 
-3. **Unvalidated References**: There's no validation mechanism to ensure that references point to valid, accessible resources.
+2. **Primary Retrieval**: The system executes these queries against the vector store, fetching semantically similar chunks of documentation.
 
-4. **Mixed Source Attribution**: Information from different documentation sources is combined without clear attribution of where each piece came from.
+3. **Follow-up Analysis**: The system analyzes if the retrieved chunks fully address the user's question using `analyze_follow_up_needs()`.
 
-## Root Causes Analysis
+4. **Follow-up Retrieval**: If needed, the system generates and executes additional targeted queries to fill knowledge gaps.
 
-The issue stems from limitations in our current adaptive multi-step retrieval implementation:
+5. **Result Combination**: The system combines all retrieved chunks, sorts them by relevance score, and returns the top results.
 
-1. **Chunking Information Loss**: Our document chunking process preserves section headers but doesn't maintain information about whether those sections have corresponding HTML anchors or valid navigation elements.
+### Document Reference System
 
-2. **Disconnect Between Content and Structure**: When retrieving content chunks, we don't preserve or validate structural relationships between documentation sections.
+The reference system resolves document paths to URLs through:
 
-3. **Content-Focused Retrieval**: Our retrieval system prioritizes semantic relevance over structural correctness, leading to accurate content with inaccurate references.
+1. **Path Registry**: A centralized `PathRegistry` class in `app/path_registry.py` that normalizes file paths and maps them to URLs.
 
-4. **Reference Assembly Without Validation**: During content assembly, the system attempts to construct references from retrieved chunks without validating if they correspond to actual documentation structure.
+2. **Source Path to URL Conversion**: When formatting retrieval results, `source_path` values are converted to URLs using `path_registry.get_url()`.
 
-5. **Cross-Context References**: When combining information from multiple chunks or sources, URL fragments may be incorrectly transplanted across documentation sections where they don't exist.
+3. **URL Generation**: The `get_url()` method in the `PathRegistry` class looks up the URL corresponding to the normalized path.
+
+### LLM Context Processing
+
+The LLM receives chunk information through the following process:
+
+1. **Chunk Format**: Each retrieved chunk is formatted into a dictionary containing:
+   ```python
+   formatted_result = {
+       "content": result["content"],      # The actual text content
+       "section": result["section"],      # Section title or header
+       "source": source_url or "",        # URL to the documentation (potentially truncated)
+       "source_path": source_path,        # Raw source path from the chunk metadata
+       "summary": result["summary"],      # Brief summary of the content
+       "score": result["score"],          # Relevance score
+       "metadata": {
+           "related_documents": result.get("related_documents", []),
+           "is_priority": result.get("is_priority", False),
+           "docs_path": self._current_path,
+           "retrieval_type": result.get("retrieval_type", "primary"),
+           "retrieval_query": result.get("retrieval_query", query),
+       },
+   }
+   ```
+
+2. **Path Information Flow**:
+   - During document chunking, each chunk is assigned a `source` attribute that contains the file path
+   - When formatting chunks for the LLM, the `source_path` is extracted and converted to a URL using `path_registry.get_url()`
+   - The LLM receives the URL in the `source` field of each chunk, which it uses to construct references
+
+3. **Prompt Construction**: The chunks are inserted into the prompt for the LLM, with instructions to use the provided sources when answering questions:
+   ```
+   Here are the sources I found that might help answer your question:
+   
+   SOURCE 1: {source_url}
+   {content}
+   
+   SOURCE 2: {source_url}
+   {content}
+   ...
+   
+   When providing references, use the exact URLs provided in the sources.
+   ```
+
+4. **Reference Generation**: The LLM constructs references based on the URLs it receives in the chunks. If a URL is truncated or points to a parent directory, the LLM has no way to know and will use the incorrect URL in its response.
+
+## Identified Issues
+
+The current system has a critical limitation with URL references:
+
+### 1. Section Referencing Issues
+
+When the chatbot tries to reference specific sections with anchor tags:
+- It cannot validate if the anchor actually exists on the target page
+- It sometimes applies anchors to parent pages where they don't exist
+
+For example:
+- **Correct**: `https://aptos.dev/en/build/guides/system-integrators-guide#current-balance-for-a-coin`
+- **Incorrect**: `https://aptos.dev/en/build/guides#current-balance-for-a-coin` (anchor on wrong page)
+
+- **Correct**: `https://aptos.dev/en/build/guides/exchanges#fungible-asset-balances`
+- **Incorrect**: `https://aptos.dev/en/build/guides#fungible-asset-balances` (anchor on wrong page)
+
+### 2. Path Truncation Problem
+
+When providing references to specific sections in documentation, the system often returns URLs that point to parent pages rather than specific pages. For example:
+
+**Correct URL (specific page)**: `https://aptos.dev/en/concepts/staking`  
+**Incorrect URL (parent page)**: `https://aptos.dev/en/concepts`
+
+This occurs because:
+- Source paths in chunks are not always preserving the full path to specific pages
+- The URL resolution system sometimes truncates paths when mapping to URLs
+
+
+### 3. Root Causes
+
+1. **Path Truncation**: During preprocessing or retrieval, specific page paths are sometimes truncated to parent directory paths.
+2. **URL Mapping**: The path-to-URL mapping system doesn't consistently preserve full paths.
+3. **Source Attribution**: Source information in chunks doesn't always contain the complete path.
+4. **Section-URL Mismatch**: The system doesn't validate whether section anchors actually exist on referenced pages.
+
+### 4. How Anchor URLs Are Formed
+
+The anchor tags (like `#current-balance-for-a-coin` in URLs such as `https://aptos.dev/en/build/guides#current-balance-for-a-coin`) can be generated at multiple points in the pipeline:
+
+1. **During Document Processing**: 
+   - The documentation processing pipeline extracts headings from Markdown files
+   - These headings are converted to anchor IDs (lowercase, spaces replaced with hyphens)
+   - However, this information is not always preserved when creating chunks
+
+2. **In the LLM's Response Generation**:
+   - When the LLM receives documentation chunks, it might identify section headers within the content
+   - It attempts to construct anchor links based on the header text it sees
+   - The LLM follows standard markdown/HTML conventions for creating anchors (lowercase, replace spaces with hyphens)
+   - Example: A heading "Current Balance for a Coin" becomes `#current-balance-for-a-coin`
+
+3. **URL Formation Issues**:
+   - The primary issue occurs when the LLM attaches valid anchor tags to incorrect base URLs
+   - For example, it might see content from `coin-and-token/coin.md` but get a URL for just `coin-and-token/`
+   - The resulting URL `https://aptos.dev/en/concepts/coin-and-token/#current-balance-for-a-coin` is invalid because the anchor exists in a child page, not the parent directory
+
+4. **Debugging Example**:
+   ```
+   Original file: /en/concepts/coin-and-token/coin.md 
+   Section: "Current Balance for a Coin"
+   
+   During chunking: 
+   - Chunk is created with content including this section
+   - Source is truncated to "/en/concepts/coin-and-token/"
+   
+   URL generation:
+   - path_registry.get_url("/en/concepts/coin-and-token/") 
+     returns "https://aptos.dev/en/concepts/coin-and-token/"
+   
+   LLM response:
+   - LLM sees header "Current Balance for a Coin" in the content
+   - Creates anchor "#current-balance-for-a-coin"
+   - Attaches to base URL: "https://aptos.dev/en/concepts/coin-and-token/#current-balance-for-a-coin"
+   - This URL fails because the anchor exists on "coin.md" page, not the directory page
+   ```
 
 ## Proposed Solutions
 
-### 1. Enhanced Document Preprocessing
+### 1. Source Path Preservation
 
-- **Anchor Mapping**: Create and store a comprehensive map of all valid document anchors and their corresponding URLs during preprocessing.
-- **Hierarchical Metadata**: Enhance chunk metadata to include complete path information and valid navigation points.
-- **Reference Standardization**: Normalize reference formats across all documentation sources.
+Enhance the chunking process to ensure each chunk's `source` attribute contains the full path to the specific page:
 
 ```python
-# During preprocessing
-def enhance_chunk_metadata(chunk, doc_structure):
-    """Add validated anchor information to chunk metadata."""
-    chunk["metadata"]["valid_anchors"] = []
-    section = chunk["section"]
-    
-    # Find valid anchors for this section in the document structure
-    if section in doc_structure["anchors"]:
-        chunk["metadata"]["valid_anchors"] = doc_structure["anchors"][section]
-    
-    # Store parent-child relationships for navigation
-    chunk["metadata"]["parent_sections"] = doc_structure["hierarchy"].get(section, [])
-    chunk["metadata"]["child_sections"] = doc_structure["children"].get(section, [])
-    
+def enhance_chunk_source_path(chunk, doc_path):
+    """Ensure chunk source contains complete path to specific page."""
+    if "source" not in chunk or not chunk["source"]:
+        chunk["source"] = doc_path
+    elif not chunk["source"].endswith((".md", ".mdx")) and doc_path.endswith((".md", ".mdx")):
+        # If source is a directory but we know the specific file, use the file
+        chunk["source"] = doc_path
     return chunk
 ```
 
-### 2. Reference Validation Layer
+### 2. Path-to-URL Enhancements
 
-- **Post-Retrieval Validation**: Add a step after retrieval to validate all references against the anchor map.
-- **Fragment Correction**: Automatically remove or correct invalid fragments in URLs.
-- **Alternative Reference Suggestion**: When an exact anchor doesn't exist, suggest the closest valid reference.
+Update the path mapping mechanism to preserve specific page paths:
 
 ```python
-class ReferenceValidator:
-    def __init__(self, anchor_map):
-        self.anchor_map = anchor_map
+def get_complete_url(path: str, provider_type: str = "developer-docs") -> str:
+    """
+    Get a complete URL preserving full path to specific pages.
+    
+    Args:
+        path: Document path
+        provider_type: Documentation provider
         
-    def validate_url(self, url):
-        """Validate a URL with fragment against known anchors."""
-        base_url, fragment = url.split('#') if '#' in url else (url, None)
-        
-        if fragment and fragment not in self.anchor_map.get(base_url, []):
-            # Fragment doesn't exist, return base URL
-            return base_url
-        
+    Returns:
+        Complete URL with preserved path
+    """
+    # First check if path is already in registry
+    url = path_registry.get_url(path)
+    if url:
         return url
         
-    def process_response(self, response_text):
-        """Find and validate all URLs in response text."""
-        # Use regex to find URLs with fragments
-        url_pattern = r'(https?://[^\s]+)'
-        return re.sub(url_pattern, lambda m: self.validate_url(m.group(0)), response_text)
+    # If not in registry, ensure we're using full path
+    if path.endswith(("/", "index")):
+        # This is a directory path, which is fine
+        pass
+    elif not path.endswith((".md", ".mdx")) and "/" in path:
+        # This might be a truncated path, check if we have a more specific path
+        possible_full_paths = [
+            f"{path}.md",
+            f"{path}.mdx",
+            f"{path}/index.md",
+            f"{path}/index.mdx"
+        ]
+        
+        for full_path in possible_full_paths:
+            full_url = path_registry.get_url(full_path)
+            if full_url:
+                return full_url
+    
+    # Fall back to standard URL generation
+    return get_docs_url(path, provider_type)
 ```
 
-### 3. Source Attribution Framework
+### 3. Reference Construction Logic
 
-- **Source Tracking**: Track the source of each piece of information during retrieval and assembly.
-- **Structured Citations**: Implement a consistent citation format that includes source name, type, and direct URL.
-- **Reference Grouping**: Group references by source type (API docs, guides, examples) in the response.
+Implement a post-processing step to correct truncated URLs in responses:
 
 ```python
-class SourceTracker:
-    def __init__(self):
-        self.sources = {}
+def correct_reference_urls(response_text: str, anchor_page_map: Dict[str, str]) -> str:
+    """
+    Correct URLs in a response to ensure they point to specific pages.
+    
+    Args:
+        response_text: The generated response
+        anchor_page_map: Mapping of anchors to their specific pages
         
-    def add_source(self, content_id, source_info):
-        """Track the source of a content piece."""
-        self.sources[content_id] = source_info
+    Returns:
+        Corrected response text
+    """
+    # Use regex to find URLs with fragments
+    url_pattern = r'(https?://[^\s]+?/en/[^\s#]+)(#[^\s]+)?'
+    
+    def replace_url(match):
+        base_url = match.group(1)
+        fragment = match.group(2) or ""
         
-    def format_references(self):
-        """Format all tracked sources into structured references."""
-        references = []
+        if fragment:
+            # Strip the # from the fragment for lookup
+            anchor = fragment[1:]
+            if anchor in anchor_page_map:
+                # Replace with the correct page URL
+                correct_page = anchor_page_map[anchor]
+                if not base_url.endswith(correct_page):
+                    # URL is pointing to wrong page, fix it
+                    correct_base = re.sub(r'/en/[^\s#]+$', f'/en/{correct_page}', base_url)
+                    return f"{correct_base}{fragment}"
         
-        # Group by source type
-        grouped = {}
-        for source_id, info in self.sources.items():
-            source_type = info["type"]
-            if source_type not in grouped:
-                grouped[source_type] = []
-            grouped[source_type].append(info)
-            
-        # Format each group
-        for source_type, sources in grouped.items():
-            references.append(f"## {source_type.title()} References")
-            for source in sources:
-                references.append(f"- [{source['title']}]({source['url']})")
-                
-        return "\n".join(references)
+        return f"{base_url}{fragment}"
+    
+    return re.sub(url_pattern, replace_url, response_text)
 ```
 
-### 4. Documentation Graph-Based Retrieval
+### 4. URL-Anchor Mapping
 
-- **Graph-Based Navigation**: Represent documentation as a graph of interconnected concepts and sections.
-- **Context-Aware References**: Generate references based on graph traversal rather than isolated chunks.
-- **Reference Path Validation**: Validate reference paths through the documentation graph.
+Build a mapping of anchors to their specific pages during preprocessing:
 
 ```python
-class DocumentationGraph:
-    def __init__(self):
-        self.nodes = {}  # Sections/pages
-        self.edges = {}  # Relationships between sections
-        
-    def add_node(self, node_id, metadata):
-        """Add a section or page to the graph."""
-        self.nodes[node_id] = metadata
-        
-    def add_edge(self, from_id, to_id, relationship):
-        """Add a relationship between sections."""
-        if from_id not in self.edges:
-            self.edges[from_id] = []
-        self.edges[from_id].append({"to": to_id, "type": relationship})
-        
-    def find_valid_reference_path(self, from_concept, to_concept):
-        """Find a valid path between concepts for referencing."""
-        # Implement graph traversal to find valid navigation paths
+async def build_anchor_page_map() -> Dict[str, str]:
+    """
+    Build a mapping of anchor IDs to their specific pages.
+    
+    Returns:
+        Dictionary mapping anchor IDs to their page paths
+    """
+    anchor_map = {}
+    
+    # Process all documentation pages
+    for page_url in path_registry.get_all_urls():
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(page_url) as response:
+                    if response.status == 200:
+                        html = await response.text()
+                        
+                        # Extract all heading IDs (common anchor targets)
+                        heading_pattern = r'<h[1-6][^>]*id=["\']([^"\']+)["\'][^>]*>'
+                        matches = re.findall(heading_pattern, html)
+                        
+                        # Get relative path from URL
+                        path = page_url.split('/en/')[1] if '/en/' in page_url else ""
+                        
+                        # Add to anchor map
+                        for anchor_id in matches:
+                            anchor_map[anchor_id] = path
+        except Exception as e:
+            logger.error(f"Error processing anchors for {page_url}: {e}")
+    
+    logger.info(f"Built anchor map with {len(anchor_map)} entries")
+    return anchor_map
 ```
 
-### 5. Integration with Adaptive Multi-Step Retrieval
+### 5. Enhanced Prompt Instructions 
 
-- **Retrieval-Time Validation**: Incorporate reference validation during the retrieval process.
-- **Context-Preserving Chunking**: Modify chunking to preserve more structural context.
-- **Reference-Aware Follow-up Queries**: Generate follow-up queries specifically to validate or enhance references.
+Update system prompts to guide the construction of references:
 
-```python
-async def adaptive_multi_step_retrieval_with_references(
-    query, vector_store, enhanced_chunks, anchor_map, k=4
-):
-    """Enhanced retrieval that validates references."""
-    # Standard multi-step retrieval
-    results = await adaptive_multi_step_retrieval(query, vector_store, enhanced_chunks, k)
-    
-    # Extract potential references from results
-    references = extract_references(results)
-    
-    # Validate references
-    validator = ReferenceValidator(anchor_map)
-    validated_references = [validator.validate_url(ref) for ref in references]
-    
-    # If invalid references found, perform follow-up queries to find valid ones
-    if any(r1 != r2 for r1, r2 in zip(references, validated_references)):
-        # Generate follow-up queries focused on finding correct references
-        followup_results = await reference_focused_retrieval(query, vector_store, enhanced_chunks)
-        
-        # Integrate validated references into the original results
-        results = merge_with_validated_references(results, followup_results)
-    
-    return results
+```
+When linking to documentation in your responses:
+
+1. URL FORMAT:
+   - Always use complete URLs that include the full path to the specific page
+   - Never link to parent directories when referring to specific content
+   - Example: Use "https://aptos.dev/en/concepts/staking" NOT "https://aptos.dev/en/concepts"
+
+2. ANCHOR USAGE:
+   - When referencing specific sections, ensure the anchor exists on that page
+   - Format section references as: [Section Title](https://aptos.dev/en/path/to/page#section-id)
+   - If uncertain about an anchor, link to the page without the anchor
+
+3. REFERENCE STYLE:
+   - Use descriptive link text that indicates what information is found at the link
+   - Format: [descriptive text](complete URL with anchor)
+   - For code references, include the module/function name in the link text
+
+4. SOURCE ATTRIBUTION:
+   - Clearly attribute information to its source
+   - When combining information from multiple sources, reference each source
+   - Use the source URLs exactly as provided in the context
 ```
 
-## Implementation Roadmap
 
-1. **Phase 1: Reference Mapping**
-   - Create comprehensive anchor maps for all documentation sources
-   - Implement initial reference validation logic
-   - Add basic URL fragment correction
-
-2. **Phase 2: Enhanced Chunking and Metadata**
-   - Update preprocessing to include reference validation data
-   - Enhance chunk metadata with structural information
-   - Implement hierarchical context preservation
-
-3. **Phase 3: Validation Integration**
-   - Integrate reference validation into the retrieval pipeline
-   - Implement post-processing for reference correction
-   - Add reference-specific follow-up queries
-
-4. **Phase 4: Source Attribution and Formatting**
-   - Develop consistent reference formatting
-   - Implement source tracking and attribution
-   - Create structured citation generation
-
-5. **Phase 5: Testing and Optimization**
-   - Create a test suite for reference validation
-   - Measure and optimize reference accuracy
-   - Monitor and tune system performance with validation enabled
-
-## Success Criteria
-
-- **Reference Accuracy**: >95% of generated references lead to valid, specific locations in documentation
-- **Format Consistency**: 100% of references follow a consistent format
-- **Performance Impact**: Reference validation adds <100ms to total response generation time
-- **User Satisfaction**: Improved ratings for reference usefulness in user feedback
-
-This enhancement will significantly improve the usability of our chatbot's responses, making it easier for developers to navigate to relevant documentation and find the detailed information they need. 
