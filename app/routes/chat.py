@@ -88,9 +88,12 @@ When answering developer questions:
 3. CITING SOURCES:
    - Always identify the specific document source for your information
    - Use exact section titles and page numbers when available
+   - When a section in the context includes a URL (format: "Section: Title - URL"), you MUST use that EXACT URL for citations - DO NOT modify or construct your own URLs
+   - If no URL is provided in the context for a section, do not create a URL
    - Format citations like: [Document Title](full_url_to_document)
    - For multiple sources, list them at the end of your answer
    - Only reference external resources that are explicitly mentioned in the Aptos documentation
+   - If referring to API endpoints, include the complete endpoint path only if explicitly mentioned in the context
 
 4. TECHNICAL PRECISION:
    - Use exact technical terminology from the Aptos documentation
@@ -114,14 +117,7 @@ When answering developer questions:
    - Ensure proper spacing between paragraphs (double newline)
    - Highlight important warnings or notes in **bold**
 
-7. LINKS AND REFERENCES:
-   - ONLY use the following validated URLs:
-{valid_urls}
-   - When linking to documentation, ALWAYS use the full URL from base URL {base_url}. For example, if linking to 'en/build/sdks', use '{base_url}/en/build/sdks'
-   - DO NOT construct URLs manually - only use exact URLs from the list above
-   - If referring to API endpoints, include the complete endpoint path
-
-8. ANSWER STRUCTURE AND RESOURCE DEDUPLICATION:
+7. ANSWER STRUCTURE AND RESOURCE DEDUPLICATION:
    - Begin with a direct answer to the question
    - Follow with deeper technical explanation
    - Include relevant code examples with proper citations
@@ -133,7 +129,7 @@ When answering developer questions:
      * Resources that would help the developer explore related concepts or implementation details
    - Never repeat in the "Additional Resources" section any documents that were already cited in the main answer
    
-9. HANDLING INFORMATION GAPS:
+8. HANDLING INFORMATION GAPS:
    - If you can identify that specific information is missing:
      * State exactly what additional information would be needed
      * Suggest specific documentation sections that might contain that information
@@ -151,28 +147,28 @@ PROVIDER_TEMPLATES: Dict[str, str] = {
     "developer-docs": BASE_TEMPLATE
     + """
 
-10. DEVELOPER FOCUS:
+9. DEVELOPER FOCUS:
     - Frame answers in terms of practical implementation
     - Highlight best practices and common pitfalls
     - Include performance considerations when relevant
     - Reference specific SDK functions and methods when applicable
    
-11. COMMUNITY RESOURCES:
+10. COMMUNITY RESOURCES:
     Always end your response with: "For further discussions or questions about {main_topic}, you can explore the [Aptos Dev Discussions](https://github.com/aptos-labs/aptos-developer-discussions/discussions)."
 """,
     "aptos-learn": BASE_TEMPLATE
     + """
 
-10. LEARNING PROGRESSION:
+11. LEARNING PROGRESSION:
     - Focus on providing learning-oriented explanations suitable for developers at different levels.
     - Begin with foundational concepts before advanced details
     - Include "Why" explanations along with "How" instructions
     - Link concepts to broader blockchain principles when helpful
 
-11. EDUCATIONAL RESOURCES:
+12. EDUCATIONAL RESOURCES:
     - Suggest specific workshops, tutorials or learning paths when relevant from the Aptos Learn platform
     - For complex topics, break learning into manageable steps
-    - End your response with: "To continue learning about {main_topic}, check out our interactive workshops and tutorials at [Aptos Learn]({base_url}/en)."
+    - End your response with: "To continue learning about {main_topic}, check out our interactive workshops and tutorials at [Aptos Learn](https://aptos.dev/en)."
 ,
 
 """,
@@ -632,16 +628,8 @@ async def generate_ai_response(
         for series in series_chunks.values():
             series.sort(key=lambda x: x.get("series_position", 0))
 
-        # Get valid URLs from the path registry
-        valid_urls = path_registry.get_all_urls()
-        if not valid_urls:
-            logger.warning("[RAG] No valid URLs available")
-
-        # Format valid URLs for the prompt with base URL
+        # Get base URL for context formatting
         base_url = DOCS_BASE_URLS[provider_type]
-        formatted_urls = "\n".join(
-            [f"- {base_url}/{url.lstrip('/')}" for url in valid_urls]
-        )
 
         # Format context for the prompt
         formatted_context = ""
@@ -667,7 +655,86 @@ async def generate_ai_response(
 
         # Then add non-series chunks
         for chunk in non_series_chunks:
-            formatted_context += f"\n\nSection: {chunk.get('section', '')}\n"
+            # Fix malformed source paths on-the-fly for URL lookup
+            source_path = chunk.get('source', '')
+            if source_path:
+                # Handle malformed paths from old chunk processing
+                # Check if path contains the malformed pattern: en/data/developer-docs/apps/nextra/pages/en/...
+                if "data/developer-docs/apps/nextra/pages/en/" in source_path:
+                    # Extract the correct relative path from the last /en/ occurrence
+                    en_index = source_path.rfind("/en/")
+                    if en_index != -1:
+                        corrected_path = "en/" + source_path[en_index + 4:]
+                        # Try to get URL with corrected path
+                        chunk_url = path_registry.get_url(corrected_path)
+                        if chunk_url:
+                            # Add the base URL to create full URL
+                            full_url = f"{base_url}/{chunk_url.lstrip('/')}"
+                            # Extract section title from content if title field is empty
+                            section_title = chunk.get('title', '')
+                            if not section_title:
+                                # Try to extract from content pattern like "Context: ... > Section Title"
+                                content = chunk.get('content', '')
+                                if content.startswith('Context:'):
+                                    # Extract the last part after the last '>'
+                                    lines = content.split('\n')
+                                    if lines:
+                                        first_line = lines[0]
+                                        if '>' in first_line:
+                                            section_title = first_line.split('>')[-1].strip()
+                                        else:
+                                            # If no '>', take everything after "Context: "
+                                            section_title = first_line.replace('Context:', '').strip()
+                            
+                            if section_title:
+                                # Convert section title to proper URL anchor format
+                                anchor = section_title.lower().replace(' ', '-').replace('(', '').replace(')', '').replace(',', '').replace(':', '').replace('–', '-').replace('—', '-')
+                                # Remove any remaining special characters and multiple dashes
+                                anchor = re.sub(r'[^a-z0-9\-]', '', anchor)
+                                anchor = re.sub(r'-+', '-', anchor).strip('-')
+                                if anchor:
+                                    full_url += f"#{anchor}"
+                            formatted_context += f"\n\nSection: {chunk.get('section', '')} - {full_url}\n"
+                        else:
+                            formatted_context += f"\n\nSection: {chunk.get('section', '')}\n"
+                    else:
+                        formatted_context += f"\n\nSection: {chunk.get('section', '')}\n"
+                else:
+                    # Try normal URL lookup
+                    chunk_url = path_registry.get_url(source_path)
+                    if chunk_url:
+                        # Add the base URL to create full URL
+                        full_url = f"{base_url}/{chunk_url.lstrip('/')}"
+                        # Extract section title from content if title field is empty
+                        section_title = chunk.get('title', '')
+                        if not section_title:
+                            # Try to extract from content pattern like "Context: ... > Section Title"
+                            content = chunk.get('content', '')
+                            if content.startswith('Context:'):
+                                # Extract the last part after the last '>'
+                                lines = content.split('\n')
+                                if lines:
+                                    first_line = lines[0]
+                                    if '>' in first_line:
+                                        section_title = first_line.split('>')[-1].strip()
+                                    else:
+                                        # If no '>', take everything after "Context: "
+                                        section_title = first_line.replace('Context:', '').strip()
+                        
+                        if section_title:
+                            # Convert section title to proper URL anchor format
+                            anchor = section_title.lower().replace(' ', '-').replace('(', '').replace(')', '').replace(',', '').replace(':', '').replace('–', '-').replace('—', '-')
+                            # Remove any remaining special characters and multiple dashes
+                            anchor = re.sub(r'[^a-z0-9\-]', '', anchor)
+                            anchor = re.sub(r'-+', '-', anchor).strip('-')
+                            if anchor:
+                                full_url += f"#{anchor}"
+                        formatted_context += f"\n\nSection: {chunk.get('section', '')} - {full_url}\n"
+                    else:
+                        formatted_context += f"\n\nSection: {chunk.get('section', '')}\n"
+            else:
+                formatted_context += f"\n\nSection: {chunk.get('section', '')}\n"
+            
             if chunk.get("summary"):
                 formatted_context += f"Summary: {chunk.get('summary')}\n"
             formatted_context += f"Content: {chunk.get('content', '')}\n"
@@ -692,13 +759,11 @@ async def generate_ai_response(
             f"[RAG] Context preview (first 5 lines): {json.dumps(context_preview, indent=2)}"
         )
 
-        # Prepare the prompt with the context, valid URLs, and correct base URL
+        # Prepare the prompt with the context
         prompt = template.format(
             context=formatted_context,
             question=message,
             main_topic=main_topic,
-            base_url=base_url,
-            valid_urls=formatted_urls,
         )
 
         # Generate the response
