@@ -664,3 +664,359 @@ Consider **partnering with Aptos Build** rather than building custom billing inf
 4. **Official Endorsement**: Being part of Aptos Build gives the AI service official status
 
 The configuration-driven architecture already supports this through an "Aptos Build integration mode" that handles authentication, billing, and rate limiting through their existing APIs.
+
+## Class Design Structure & Method Signatures
+
+### **Core Class Hierarchy**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        AIService                                │
+├─────────────────────────────────────────────────────────────────┤
+│ - pipelines: Dict[str, ApplicationPipeline]                    │
+│ - config_loader: ConfigLoader                                  │
+├─────────────────────────────────────────────────────────────────┤
+│ + __init__()                                                    │
+│ + _load_applications()                                          │
+│ + chat(app_name: str, query: str, **params) -> Response        │
+│ + get_application_info(app_name: str) -> AppInfo               │
+│ + list_applications() -> List[str]                             │
+│ + reload_application(app_name: str) -> bool                    │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ contains
+┌─────────────────────────────────────────────────────────────────┐
+│                   ApplicationPipeline                           │
+├─────────────────────────────────────────────────────────────────┤
+│ - app_name: str                                                 │
+│ - vector_db: VectorDB                                          │
+│ - retrieval_strategy: RetrievalStrategy                        │
+│ - main_llm: LLMProvider                                        │
+│ - config: AppConfig                                            │
+├─────────────────────────────────────────────────────────────────┤
+│ + __init__(app_config: AppConfig)                              │
+│ + process_query(query: str, params: Dict) -> Response          │
+│ + context_search(query: str, k: int) -> List[Chunk]            │
+│ + _build_combined_vector_db(sources: List[DataSource]) -> VectorDB │
+│ + _create_retrieval_strategy(config: RetrievalConfig) -> RetrievalStrategy │
+│ + _create_llm(config: LLMConfig) -> LLMProvider                │
+│ + _build_prompt(query: str, context: List[Chunk]) -> str       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### **Data Source Hierarchy**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     DataSource (ABC)                           │
+├─────────────────────────────────────────────────────────────────┤
+│ + load_documents() -> List[Document]                           │
+│ + preprocess_documents(docs: List[Document]) -> List[Chunk]     │
+│ + get_metadata() -> Dict[str, Any]                             │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                    ┌─────────┼─────────┐
+                    ▼         ▼         ▼
+┌─────────────────────┐ ┌─────────────────┐ ┌─────────────────────┐
+│ MarkdownDocsSource  │ │GitHubDiscussions│ │ CodeRepositorySource│
+├─────────────────────┤ │     Source      │ ├─────────────────────┤
+│ - docs_path: str    │ ├─────────────────┤ │ - repo_path: str    │
+│ - file_pattern: str │ │ - repo: str     │ │ - include_patterns  │
+├─────────────────────┤ │ - github_token  │ ├─────────────────────┤
+│ + load_documents()  │ │ - include_issues│ │ + load_documents()  │
+│ + _parse_markdown() │ ├─────────────────┤ │ + _parse_code_files │
+│ + _extract_headers()│ │ + load_documents│ │ + _extract_functions│
+└─────────────────────┘ │ + _fetch_issues │ │ + _get_dependencies │
+                        │ + _parse_thread │ └─────────────────────┘
+                        └─────────────────┘
+```
+
+### **Retrieval Strategy Hierarchy**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  RetrievalStrategy (ABC)                       │
+├─────────────────────────────────────────────────────────────────┤
+│ + retrieve_context(query: str, k: int, vector_db: VectorDB) -> List[Chunk] │
+│ + _rerank_results(chunks: List[Chunk], query: str) -> List[Chunk] │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        ▼                     ▼                     ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────────┐
+│SimpleRetrieval  │ │MultiStepRetrieval│ │AdaptiveRetrieval    │
+│   Strategy      │ │    Strategy      │ │    Strategy         │
+├─────────────────┤ ├─────────────────┤ ├─────────────────────┤
+│ + retrieve_     │ │ - query_expansion│ │ - analyzer_llm      │
+│   context()     │ │   _llm: LLMProvider │ │ - max_iterations │
+└─────────────────┘ ├─────────────────┤ ├─────────────────────┤
+                    │ + retrieve_     │ │ + retrieve_context()│
+                    │   context()     │ │ + _analyze_sufficiency│
+                    │ + _generate_    │ │ + _generate_refined_│
+                    │   related_queries│ │   queries()         │
+                    │ + _deduplicate_ │ │ + _iterative_search │
+                    │   and_rerank()  │ └─────────────────────┘
+                    └─────────────────┘
+```
+
+### **LLM Provider Hierarchy**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    LLMProvider (ABC)                           │
+├─────────────────────────────────────────────────────────────────┤
+│ - config: LLMConfig                                            │
+│ - has_tools: bool                                              │
+├─────────────────────────────────────────────────────────────────┤
+│ + generate(prompt: str, config: LLMConfig) -> LLMResponse      │
+│ + generate_with_tools(query: str, tools: Dict[str, Callable]) -> LLMResponse │
+│ + stream_generate(prompt: str, config: LLMConfig) -> AsyncIterator[str] │
+│ + _format_messages(prompt: str) -> List[Message]               │
+│ + _handle_tool_calls(response: Any) -> LLMResponse             │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                    ┌─────────┼─────────┐
+                    ▼         ▼         ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│  OpenAIProvider │ │AnthropicProvider│ │  LocalLLMProvider│
+├─────────────────┤ ├─────────────────┤ ├─────────────────┤
+│ - client: OpenAI│ │ - client: Client│ │ - model_path    │
+│ - api_key: str  │ │ - api_key: str  │ │ - device: str   │
+├─────────────────┤ ├─────────────────┤ ├─────────────────┤
+│ + generate()    │ │ + generate()    │ │ + generate()    │
+│ + _format_tools │ │ + _format_tools │ │ + _load_model() │
+│ + _handle_stream│ │ + _handle_stream│ │ + _tokenize()   │
+└─────────────────┘ └─────────────────┘ └─────────────────┘
+```
+
+### **Configuration and Models**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       ConfigLoader                             │
+├─────────────────────────────────────────────────────────────────┤
+│ - config_dir: str                                              │
+├─────────────────────────────────────────────────────────────────┤
+│ + load_all_configs() -> Dict[str, AppConfig]                   │
+│ + load_config(filename: str) -> AppConfig                      │
+│ + validate_config(config: AppConfig) -> bool                   │
+│ + _resolve_data_source_paths(config: AppConfig) -> AppConfig   │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                        AppConfig                               │
+├─────────────────────────────────────────────────────────────────┤
+│ + app_name: str                                                │
+│ + version: str                                                 │
+│ + data_sources: List[DataSourceConfig]                        │
+│ + retrieval: RetrievalConfig                                   │
+│ + llm: LLMConfig                                               │
+├─────────────────────────────────────────────────────────────────┤
+│ + from_file(filepath: str) -> AppConfig                        │
+│ + to_dict() -> Dict[str, Any]                                  │
+│ + validate() -> bool                                           │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    DataSourceConfig                            │
+├─────────────────────────────────────────────────────────────────┤
+│ + name: str                                                    │
+│ + type: str                                                    │
+│ + path: str                                                    │
+│ + options: Dict[str, Any]                                      │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    RetrievalConfig                             │
+├─────────────────────────────────────────────────────────────────┤
+│ + strategy: str                                                │
+│ + embedding_model: str                                         │
+│ + k: int                                                       │
+│ + query_expansion_llm: Optional[LLMConfig]                     │
+│ + analyzer_llm: Optional[LLMConfig]                            │
+│ + rerank_model: Optional[str]                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                       LLMConfig                               │
+├─────────────────────────────────────────────────────────────────┤
+│ + provider: str                                                │
+│ + model: str                                                   │
+│ + temperature: float                                           │
+│ + max_tokens: int                                              │
+│ + system_prompt_template: str                                  │
+│ + tools: List[str]                                             │
+│ + include_sources: bool                                        │
+│ + citation_format: str                                         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### **Vector Database and Document Models**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       VectorDB                                │
+├─────────────────────────────────────────────────────────────────┤
+│ - collection_name: str                                         │
+│ - embedding_model: str                                         │
+│ - chunks: List[Chunk]                                          │
+├─────────────────────────────────────────────────────────────────┤
+│ + add_documents(docs: List[Document])                          │
+│ + similarity_search(query: str, k: int) -> List[Chunk]         │
+│ + hybrid_search(query: str, k: int) -> List[Chunk]             │
+│ + delete_collection()                                          │
+│ + get_stats() -> DBStats                                       │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                       Document                                │
+├─────────────────────────────────────────────────────────────────┤
+│ + content: str                                                 │
+│ + metadata: Dict[str, Any]                                     │
+│ + source: str                                                  │
+│ + doc_id: str                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│ + chunk(chunk_size: int, overlap: int) -> List[Chunk]          │
+│ + get_embedding() -> List[float]                               │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                        Chunk                                  │
+├─────────────────────────────────────────────────────────────────┤
+│ + content: str                                                 │
+│ + metadata: Dict[str, Any]                                     │
+│ + doc_id: str                                                  │
+│ + chunk_id: str                                                │
+│ + embedding: Optional[List[float]]                             │
+│ + score: Optional[float]                                       │
+├─────────────────────────────────────────────────────────────────┤
+│ + get_citation() -> str                                        │
+│ + to_context_string() -> str                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### **Response Models**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       Response                                │
+├─────────────────────────────────────────────────────────────────┤
+│ + content: str                                                 │
+│ + sources: List[Source]                                        │
+│ + metadata: Dict[str, Any]                                     │
+│ + processing_time: float                                       │
+│ + tokens_used: int                                             │
+├─────────────────────────────────────────────────────────────────┤
+│ + add_source(chunk: Chunk)                                     │
+│ + to_dict() -> Dict[str, Any]                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                        Source                                 │
+├─────────────────────────────────────────────────────────────────┤
+│ + title: str                                                   │
+│ + url: Optional[str]                                           │
+│ + content_preview: str                                         │
+│ + relevance_score: float                                       │
+│ + metadata: Dict[str, Any]                                     │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                     LLMResponse                               │
+├─────────────────────────────────────────────────────────────────┤
+│ + content: str                                                 │
+│ + tool_calls: Optional[List[ToolCall]]                         │
+│ + usage: TokenUsage                                            │
+│ + model: str                                                   │
+│ + finish_reason: str                                           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### **Key Method Implementations**
+
+#### **AIService.chat() - Main Entry Point**
+```python
+async def chat(self, app_name: str, query: str, **params) -> Response:
+    """Main API endpoint for all applications."""
+    start_time = time.time()
+    
+    # Validate application exists
+    if app_name not in self.pipelines:
+        raise ValueError(f"Unknown application: {app_name}")
+    
+    # Route to specific pipeline
+    pipeline = self.pipelines[app_name]
+    response = await pipeline.process_query(query, params)
+    
+    # Add metadata
+    response.metadata['app_name'] = app_name
+    response.processing_time = time.time() - start_time
+    
+    return response
+```
+
+#### **ApplicationPipeline.process_query() - Pipeline Execution**
+```python
+async def process_query(self, query: str, params: Dict[str, Any]) -> Response:
+    """Execute the fixed pipeline for this application."""
+    
+    # Check if LLM has tool access
+    if self.main_llm.has_tools:
+        # Tool-enabled LLM can call context_search when needed
+        return await self.main_llm.generate_with_tools(
+            query=query,
+            tools={"context_search": self.context_search},
+            config=self.config.llm
+        )
+    else:
+        # Traditional RAG: retrieve first, then generate
+        context_chunks = await self.context_search(query, params.get('k', 5))
+        prompt = self._build_prompt(query, context_chunks)
+        
+        llm_response = await self.main_llm.generate(prompt, self.config.llm)
+        
+        # Build final response with sources
+        response = Response(
+            content=llm_response.content,
+            sources=[Source.from_chunk(chunk) for chunk in context_chunks],
+            tokens_used=llm_response.usage.total_tokens
+        )
+        
+        return response
+```
+
+#### **RetrievalStrategy.retrieve_context() - Smart Retrieval**
+```python
+# MultiStepRetrievalStrategy implementation
+async def retrieve_context(self, query: str, k: int, vector_db: VectorDB) -> List[Chunk]:
+    """Multi-step retrieval with query expansion."""
+    
+    # Step 1: Generate related queries using LLM
+    additional_queries = await self._generate_related_queries(query)
+    
+    # Step 2: Search with all queries
+    all_chunks = []
+    for search_query in [query] + additional_queries:
+        chunks = await vector_db.similarity_search(search_query, k)
+        all_chunks.extend(chunks)
+    
+    # Step 3: Deduplicate and rerank
+    unique_chunks = self._remove_duplicates(all_chunks)
+    final_chunks = self._rerank_by_relevance(unique_chunks, query, k)
+    
+    return final_chunks
+
+async def _generate_related_queries(self, original_query: str) -> List[str]:
+    """Use query expansion LLM to generate related questions."""
+    prompt = f"""
+    Generate 2-3 related questions that would help find comprehensive 
+    information about: {original_query}
+    
+    Return only the questions, one per line.
+    """
+    
+    response = await self.query_expansion_llm.generate(prompt)
+    return [q.strip() for q in response.content.split('\n') if q.strip()]
+```
+
+This structure provides a clear, extensible foundation where new applications can be added by simply creating new configuration files, and new components can be developed by implementing the abstract base classes.
